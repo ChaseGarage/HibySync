@@ -15,12 +15,15 @@ Behavior changes should be separate, reviewed changes with regression tests.
 3. Extract path configuration and hashing first, then metadata, artwork,
    MusicBrainz, and cache helpers. Preserve per-command supported formats and
    distinct local-copy versus MTP-copy behavior until explicitly reconciled.
-4. Consolidate caches under `~/Music/metadata-cache`, with explicit CLI overrides
-   and compatibility for existing correction caches. Do not silently relocate
-   or overwrite approved corrections.
-5. Add isolated user installation, development setup, uninstall support, and CI
-   that tests both source and installed commands. Installation and removal must
-   leave libraries, downloads, caches, and devices alone.
+4. **Complete:** Defaults use `~/Music/Library` and the hidden metadata root
+   `~/.cache/hiby-music-tools`, with explicit CLI overrides. The owner moves
+   existing files manually; there is no legacy-path fallback or automatic
+   relocation. See [manual moves](manual-moves.md).
+5. User installation is available through `install.sh`, with backup of previous
+   commands and tests for installation/reinstallation. The environment can reuse
+   distro Python dependencies. Uninstall support and CI remain planned.
+   Installation and removal must leave libraries, downloads, caches, and devices
+   alone.
 
 ## Follow-up behavior decisions
 

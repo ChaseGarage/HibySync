@@ -35,6 +35,8 @@ import urllib.parse
 import urllib.request
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
+
+from hiby_music_tools.paths import metadata_dir
 from typing import Iterable, Optional
 
 try:
@@ -213,7 +215,7 @@ def parse_args() -> argparse.Namespace:
         metavar="FILE",
         help=(
             "JSON cache for approved metadata corrections. Default: "
-            "SOURCE/.hiby-metadata-cache.json"
+            "~/.cache/hiby-music-tools/corrections.json"
         ),
     )
     p.add_argument(
@@ -223,7 +225,7 @@ def parse_args() -> argparse.Namespace:
         metavar="DB",
         help=(
             "SQLite cache for MusicBrainz lookup responses. Default: "
-            "~/Music/metadata-cache/musicbrainz.sqlite3"
+            "~/.cache/hiby-music-tools/musicbrainz.sqlite3"
         ),
     )
     return p.parse_args()
@@ -1825,12 +1827,12 @@ def main() -> int:
 
     source, destination = validate_paths(args.source, args.destination)
     online_review = args.online_review or args.online_review_all
-    cache_path = (args.metadata_cache or (source / ".hiby-metadata-cache.json")).expanduser().resolve(strict=False)
+    cache_path = (args.metadata_cache or (metadata_dir() / "corrections.json")).expanduser().resolve(strict=False)
     metadata_cache = load_metadata_cache(cache_path)
 
     global _MB_LOOKUP_CACHE_DB
     _MB_LOOKUP_CACHE_DB = (
-        args.lookup_cache or (Path.home() / "Music" / "metadata-cache" / "musicbrainz.sqlite3")
+        args.lookup_cache or (metadata_dir() / "musicbrainz.sqlite3")
     ).expanduser().resolve(strict=False)
     init_lookup_cache(_MB_LOOKUP_CACHE_DB)
 

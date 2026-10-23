@@ -14,9 +14,9 @@ command names. Shared-module extraction and installation scripts are planned. Se
   -> musicimport
        -> hiby-music-sanitize -> temporary staging library
        -> hiby-online-art    -> missing covers in staging
-       -> verified merge into ~/HiBy-Music
+       -> verified merge into ~/Music/Library
 
-~/HiBy-Music -> musicsync -> mounted HiBy Music directory
+~/Music/Library -> musicsync -> mounted HiBy Music directory
 ```
 
 `musicimport` enables interactive metadata and artwork review by default. It
@@ -46,6 +46,25 @@ Each executable supports `--help`. Commands can be run directly from this checko
 
 ## Package installation
 
+Install or update the commands in `~/.local/bin`:
+
+```sh
+./install.sh
+```
+
+The installer creates a fresh environment under
+`~/.local/share/hiby-music-tools/releases/`, installs a snapshot of this checkout,
+checks all four help commands, then links them into `~/.local/bin`. Previous
+commands are saved under `~/.local/share/hiby-music-tools/backups/`. Old
+environments remain so backed-up links still work. Re-run after code changes.
+
+On CachyOS the environment reuses available distro Python packages. Missing
+runtime dependencies are installed into the environment by pip. Python's `venv`,
+pip, and `setuptools>=61` must be available. Use `./install.sh --offline` to
+forbid package index access when dependencies are already present. No `sudo`
+is needed. The installer never moves music or metadata; perform the
+[manual moves](docs/manual-moves.md) before importing or syncing.
+
 For a local development environment (downloads dependencies if needed):
 
 ```sh
@@ -57,24 +76,26 @@ python -m venv .venv
 For a regular installation into a chosen virtual environment, use `pip install .`
 without `-e`. Do not copy the root launchers into `~/.local/bin`: they depend on
 being beside this checkout's `src` directory. Installed console commands are
-created by the package installer. Existing standalone installations are not
-changed automatically.
+created by the package installer. Existing standalone installations are replaced
+only when running `install.sh`.
 
 ## Paths and caches
 
 | Purpose | Current default |
 | --- | --- |
-| Permanent library | `~/HiBy-Music` |
+| Permanent library | `~/Music/Library` |
 | Incoming downloads | `~/Music/Nicotine` |
-| Import correction cache | `~/Music/.hiby-metadata-cache.json` |
-| Standalone sanitizer correction cache | `SOURCE/.hiby-metadata-cache.json` |
-| MusicBrainz response cache | `~/Music/metadata-cache/musicbrainz.sqlite3` |
-| Artwork cache | `~/Music/metadata-cache/artwork/` |
-| Import staging parent | `~/Music/metadata-cache/import-staging/` |
-| Sync state | `~/Music/metadata-cache/musicsync.sqlite3` |
+| Import correction cache | `~/.cache/hiby-music-tools/corrections.json` |
+| Standalone sanitizer correction cache | `~/.cache/hiby-music-tools/corrections.json` |
+| MusicBrainz response cache | `~/.cache/hiby-music-tools/musicbrainz.sqlite3` |
+| Artwork cache | `~/.cache/hiby-music-tools/artwork/` |
+| Import staging parent | `~/.cache/hiby-music-tools/import-staging/` |
+| Sync state | `~/.cache/hiby-music-tools/musicsync.sqlite3` |
 
-The intended cache root is `~/Music/metadata-cache`. The older correction-cache
-defaults above are retained for now; migration must preserve approved fixes.
+All tools now default to `~/.cache/hiby-music-tools` for metadata and staging.
+Existing data is not relocated automatically. See [manual moves](docs/manual-moves.md)
+before using these defaults. CLI path overrides still take precedence.
+The correction JSON contains approved decisions; keep it when clearing caches.
 
 ## Current behavior and recovery
 
@@ -89,7 +110,7 @@ defaults above are retained for now; migration must preserve approved fixes.
   every tag and cover was repaired.
 - `--clean` deletes the sanitizer destination before rebuilding. Without it,
   existing output paths may be overwritten. The source audio is read, but the
-  default correction cache can be written inside the source directory.
+  correction cache is stored separately under the hidden metadata directory.
 - A successful import **empties the entire inbox**, including non-audio files,
   unless `--keep-inbox` is supplied. Conflict choices are replace, keep existing
   and discard incoming, or abort. Keeping a differing existing file still

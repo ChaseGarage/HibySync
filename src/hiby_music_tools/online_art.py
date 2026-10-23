@@ -17,6 +17,8 @@ import io
 import json
 import os
 from pathlib import Path
+
+from hiby_music_tools.paths import metadata_dir
 import re
 import shutil
 import sqlite3
@@ -418,7 +420,7 @@ def find_candidates(artist: str, album: str, cache: Cache) -> list[Candidate]:
 def main() -> int:
     p = argparse.ArgumentParser(description="Interactively search and embed missing album art in a sanitized HiBy music staging folder")
     p.add_argument("library", type=Path, help="sanitized staging library produced by hiby-music-sanitize")
-    p.add_argument("--cache", type=Path, default=Path("~/Music/metadata-cache/artwork"))
+    p.add_argument("--cache", type=Path, default=metadata_dir() / "artwork")
     p.add_argument("--art-max", type=int, default=600)
     p.add_argument("--jpeg-quality", type=int, default=88)
     p.add_argument("--no-preview", action="store_true", help="suppress chafa inline previews")

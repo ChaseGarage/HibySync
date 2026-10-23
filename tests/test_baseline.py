@@ -19,6 +19,7 @@ from PIL import Image
 
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "src"))
 
 
 def load_script(filename):
@@ -165,6 +166,27 @@ class BaselineTests(unittest.TestCase):
         self.assertEqual(self.sanitize(source, destination, '--dry-run'), 0)
         self.assertFalse(destination.exists())
         self.assertTrue((self.root / 'lookup.sqlite3').is_file())
+
+    def test_shared_defaults_and_standalone_correction_cache(self):
+        metadata = self.home / '.cache/hiby-music-tools'
+        with mock.patch.object(sys, 'argv', ['musicimport']):
+            args = self.importer.parse_args()
+        self.assertEqual(args.library, self.home / 'Music/Library')
+        self.assertEqual(args.inbox, self.home / 'Music/Nicotine')
+        self.assertEqual(args.metadata_cache, metadata / 'corrections.json')
+        self.assertEqual(args.lookup_cache, metadata / 'musicbrainz.sqlite3')
+        self.assertEqual(self.sync.SOURCE_DEFAULT, args.library)
+        self.assertEqual(self.sync.STATE_DB_DEFAULT, metadata / 'musicsync.sqlite3')
+        metadata.mkdir(parents=True)
+        cache = metadata / 'corrections.json'
+        cache.write_text('{"__artist_aliases__": {"old": "New"}}')
+        source = self.root / 'inbox'
+        make_track(source / 'song.wav')
+        self.assertEqual(self.run_main(self.sanitizer, source, self.root / 'out'), 0)
+        self.assertEqual(self.sanitizer.load_metadata_cache(cache)['__artist_aliases__'],
+                         {'old': 'New'})
+        self.assertTrue((metadata / 'musicbrainz.sqlite3').is_file())
+        self.assertFalse((source / '.hiby-metadata-cache.json').exists())
 
     def test_online_art_preserves_existing_cover(self):
         track = self.root / 'song.wav'

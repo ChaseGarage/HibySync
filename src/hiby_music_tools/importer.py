@@ -5,7 +5,7 @@ Default workflow:
     ~/Music/Nicotine
         -> hiby-music-sanitize (interactive MusicBrainz review)
         -> temporary staging tree
-        -> ~/HiBy-Music
+        -> ~/Music/Library
         -> empty ~/Music/Nicotine only after a successful verified import
 
 The source inbox is never deleted if sanitizing, conflict resolution, copying, or
@@ -23,6 +23,8 @@ import sys
 import tempfile
 from pathlib import Path
 
+from hiby_music_tools.paths import library_dir, metadata_dir
+
 AUDIO_EXTENSIONS = {
     ".mp3", ".flac", ".m4a", ".mp4", ".aac", ".ogg", ".oga", ".opus",
     ".wav", ".wave", ".aif", ".aiff", ".ape", ".wma", ".wv", ".dsf", ".dff",
@@ -32,7 +34,7 @@ AUDIO_EXTENSIONS = {
 def parse_args() -> argparse.Namespace:
     home = Path.home()
     p = argparse.ArgumentParser(
-        description="Sanitize ~/Music/Nicotine, merge it into ~/HiBy-Music, then empty the inbox."
+        description="Sanitize ~/Music/Nicotine, merge it into ~/Music/Library, then empty the inbox."
     )
     p.add_argument(
         "--inbox",
@@ -43,8 +45,8 @@ def parse_args() -> argparse.Namespace:
     p.add_argument(
         "--library",
         type=Path,
-        default=home / "HiBy-Music",
-        help="sanitized local library (default: ~/HiBy-Music)",
+        default=library_dir(),
+        help="sanitized local library (default: ~/Music/Library)",
     )
     p.add_argument(
         "--sanitizer",
@@ -55,13 +57,13 @@ def parse_args() -> argparse.Namespace:
     p.add_argument(
         "--metadata-cache",
         type=Path,
-        default=home / "Music" / ".hiby-metadata-cache.json",
+        default=metadata_dir() / "corrections.json",
         help="persistent sanitizer correction cache",
     )
     p.add_argument(
         "--lookup-cache",
         type=Path,
-        default=home / "Music" / "metadata-cache" / "musicbrainz.sqlite3",
+        default=metadata_dir() / "musicbrainz.sqlite3",
         help="persistent MusicBrainz lookup cache",
     )
     p.add_argument(
@@ -222,7 +224,7 @@ def main() -> int:
     lookup_cache.parent.mkdir(parents=True, exist_ok=True)
     library.mkdir(parents=True, exist_ok=True)
 
-    staging_parent = Path.home() / "Music" / "metadata-cache" / "import-staging"
+    staging_parent = metadata_dir() / "import-staging"
     staging_parent.mkdir(parents=True, exist_ok=True)
 
     print("HiBy music import")

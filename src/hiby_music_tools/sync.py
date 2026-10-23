@@ -3,7 +3,7 @@
 musicsync - Mirror a sanitized local HiBy music library to the mounted HiBy /Music folder.
 
 Default local library:
-    ~/HiBy-Music
+    ~/Music/Library
 
 Behavior:
   * Preserves the local Artist/Year-Album/Title.ext structure exactly.
@@ -28,13 +28,15 @@ import sys
 import time
 from pathlib import Path
 
+from hiby_music_tools.paths import library_dir, metadata_dir
+
 AUDIO_EXTENSIONS = {
     ".mp3", ".flac", ".m4a", ".mp4", ".aac", ".ogg", ".opus",
     ".wav", ".aif", ".aiff", ".wma", ".ape", ".wv", ".alac"
 }
 
-STATE_DB_DEFAULT = Path("~/Music/metadata-cache/musicsync.sqlite3").expanduser()
-SOURCE_DEFAULT = Path("~/HiBy-Music").expanduser()
+STATE_DB_DEFAULT = metadata_dir() / "musicsync.sqlite3"
+SOURCE_DEFAULT = library_dir()
 CHUNK = 512 * 1024
 
 
@@ -336,7 +338,7 @@ def confirm(prompt: str) -> bool:
 
 def main() -> int:
     ap = argparse.ArgumentParser(
-        description="Mirror ~/HiBy-Music to the mounted HiBy /Music folder."
+        description="Mirror ~/Music/Library to the mounted HiBy /Music folder."
     )
     ap.add_argument("--source", type=Path, default=SOURCE_DEFAULT)
     ap.add_argument("--device-music", type=Path)
