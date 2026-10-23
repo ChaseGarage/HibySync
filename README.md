@@ -5,7 +5,149 @@ music library and synchronizing it to a HiBy R1.
 
 The implementations now live in `src/hiby_music_tools/`. The four root
 executables remain source-checkout launchers, and packaging provides the same
-command names. Shared-module extraction and installation scripts are planned. See [the migration plan](docs/migration.md).
+command names. Shared naming rules, review, and verified-copy services also power the
+optional HibySync GUI. See [the migration plan](docs/migration.md).
+
+## HibySync desktop application
+
+HibySync uses Qt Quick/QML for a minimalist dark interface, backed by Python
+and PySide6. It supports scanning, metadata review, Apple artwork search, and
+verified imports, an indexed local Library browser, and mpv-backed playback. Existing CLI commands
+retain their behavior.
+
+On CachyOS/Arch, install Qt bindings along with the existing dependencies:
+
+```sh
+sudo pacman -S mpv pyside6 python-pillow python-mutagen python-setuptools python-pip
+./install.sh --gui
+hibysync
+```
+
+Alternatively, `./install.sh --gui` can download PySide6 into its environment.
+Use `./install.sh --offline --gui` when the dependencies are already installed.
+Use `--gui` again when updating an existing GUI installation. CLI-only installs
+do not replace a previously installed GUI launcher.
+
+From this checkout, this command works in **Fish** as well as Bash:
+
+```sh
+./hibysync
+```
+
+To use test folders, without touching your incoming downloads:
+
+```sh
+./hibysync --inbox /path/to/test-inbox --library /path/to/test-library
+```
+
+The application uses a consistent near-black palette and Inter when available,
+with proportional sans-serif fallbacks. On Hyprland, if Qt does not select
+Wayland automatically, Fish supports:
+
+```sh
+env QT_QPA_PLATFORM=wayland ./hibysync
+```
+
+The previous functional Widgets interface remains available:
+
+```sh
+./hibysync --widgets
+```
+
+Import defaults to **`~/Music/Nicotine` → `~/Music/Library`**, not the entire
+`~/Music` tree. Scan reads tags and artwork in the background and shows album
+rows with thumbnails and review statuses. Filter to problematic albums, or open
+any album for a dedicated review. Album metadata fields appear on Edit; select a
+track to open its focused editor and original tags. Apply changes to keep them
+pending in memory. Album edits preserve individual track artists. Artwork
+selection shows embedded/folder candidates and their original resolutions.
+Selecting the **Apple artwork** tab automatically searches using the artist and
+album fields. Edit either field and select **Refresh** to search again.
+Results prefer 1200px images and
+show the dimensions actually downloaded; choosing a result never changes tags
+until import is confirmed. Existing covers are not replaced automatically.
+Preview lists destinations, conflicts, skipped files, and expandable change
+details. Use the folder control or the top-right settings icon to change paths.
+
+Select **Preview import**, inspect paths and changes, then **Import files**.
+Existing-file conflicts default to keeping the library copy. A conflict's
+button can explicitly select replacement, with verified backups retained.
+The final confirmation names the destination and replacement count. Import
+stages edited copies, verifies tags/artwork, and checks SHA-256 before and after
+publishing each track. The completion page reports imports, replacements,
+duplicates, skips, failures, and any unprocessed files after cancellation.
+
+**GUI imports remove successfully imported and verified duplicate audio files
+from the incoming folder.** Cleanup runs after copying, rechecks each source
+and library file, verifies the library bytes again, and flushes the library
+file/directory entries before removing the original. Skipped, failed, changed,
+and unprocessed files stay. Folder artwork, other non-audio files, new downloads,
+and empty folders are left alone. An embedded-art source needed by a pending
+track is also kept. The completion page reports removed/retained counts and
+cleanup errors separately from copy results. Cancellation during copying skips
+cleanup; cancellation during cleanup stops between originals.
+
+The CLI's existing inbox-cleanup behavior is unchanged. GUI edits remain in memory until
+applied to imported copies; they are not written back to incoming tags or
+saved as a new correction-cache entry. Scanning remains read-only and offline;
+Apple searches explicitly write to the existing artwork cache. MusicBrainz
+suggestions and manually browsing for artwork remain planned. Device remains a
+placeholder. The `--widgets` fallback remains the earlier review-only
+interface. See [GUI architecture and limits](docs/gui.md).
+
+HibySync opens in **Library**, loading the existing index without scanning music
+or starting playback. Select **Index library** to scan the configured library.
+Browse artwork in Albums, select an artist to see their albums, or search and
+sort Songs by title, artist, album, year, and duration. Album details include
+numbered tracks, disc groups, and total duration. Scanning only reads music;
+it does not retag, move, or remove library files. Library metadata editing
+remains reserved for a later milestone.
+
+Use a song row's leading play control to play its complete sorted/filtered
+context; the same control pauses/resumes the current track without replacing
+the queue. Clicking elsewhere selects the row, and double-click remains a
+shortcut. The active track has a muted-green indicator. Use **Play**
+and **Shuffle** on an album. Artist pages offer **Play artist**. Track menus and
+album pages provide **Play next** and **Add to queue**. The persistent bottom bar
+controls pause, previous/next, stop, precise seeking, volume, shuffle, repeat,
+and the queue panel. Queue entries can be selected, removed, and moved earlier
+or later. Music continues while browsing Import, Library, and Device.
+Artist and album names underline on hover and open their Library pages when
+clicked. These links also work in the player and queue; clicking the player's
+song title opens its album without interrupting playback.
+Library expands on wide displays and hides Album/Year columns at narrower
+content widths; all sort options remain available in the header menu. Album
+headers scroll naturally with their tracks. The player bar centers transport
+controls on wide displays and uses a separate progress row on narrow displays.
+Stop, shuffle/repeat, and volume remain accessible through its options menu.
+Mouse-wheel scrolling uses a faster app-local setting (at least nine lines per
+notch), while retaining native touchpad scrolling.
+
+Playback uses a private mpv process over JSON IPC, with personal mpv settings
+and scripts disabled, speed 1, and no EQ, normalization, ReplayGain, or crossfade.
+No output sample rate or sample format is forced. PipeWire is preferred, with
+PulseAudio/ALSA fallbacks. The system and DAC may still convert audio; HibySync
+does not claim bit-perfect output. Preferences and queue state are saved at
+`~/.local/state/hibysync/player.json` (following `XDG_STATE_HOME`) and restored
+without autoplay. See [playback configuration, testing, and limits](docs/playback.md).
+
+**Refresh** incrementally indexes added, changed, renamed, and removed files.
+**Rebuild index** rereads all files. Both run in background workers and can be
+cancelled while retaining the previous committed index. GUI imports mark the
+Library for refresh on its next visit; external changes require Refresh.
+The SQLite index is stored at
+`~/.cache/hiby-music-tools/library/index.sqlite3`, with bounded artwork thumbnails
+in the neighboring `artwork/` directory. Existing metadata-cache configuration
+also controls this location. See [Library indexing and limitations](docs/library.md).
+
+GUI staging is under `~/.cache/hiby-music-tools/import-staging/gui-*`. Ordinary
+temporary outputs are removed after execution. Replacements retain their old
+library versions under the run's `backups/` directory; the result screen shows
+the recovery location. A batch is not rolled back when a later track fails or
+is cancelled. Successfully verified copies stay in the library. New-file
+publication requires hard-link support (available on typical local Linux
+filesystems such as ext4/Btrfs); unsupported filesystems fail safely and retain
+sources. A changed source, artwork, or destination requires a fresh review.
 
 ## Workflow
 
@@ -155,3 +297,9 @@ The packaging test builds and installs offline into a temporary virtual
 environment using available system dependencies. It exercises all installed
 help commands, both real import helpers on covered WAV audio, and verified sync
 to a fake device. It needs `pip`, `setuptools>=61`, and working `venv` support.
+
+GUI tests use Qt's offscreen platform and temporary fixtures. QML tests use the
+software renderer, exercise actual controls, check proportional typography and
+progressive disclosure, and cover worker cancellation and packaged QML assets.
+The previous Widgets frontend also retains its integration tests. Install the
+GUI extra or distro `pyside6` to run them; otherwise they are reported as skipped.

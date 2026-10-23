@@ -18,11 +18,14 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--offline', action='store_true',
                         help='forbid package index access; use installed dependencies')
+    parser.add_argument('--gui', action='store_true',
+                        help='install optional PySide6 dependency and GUI launcher')
     args = parser.parse_args()
+    commands = (*COMMANDS, 'hibysync') if args.gui else COMMANDS
     home = Path.home()
     install_root = home / '.local/share/hiby-music-tools'
     bin_dir = home / '.local/bin'
-    for name in COMMANDS:
+    for name in commands:
         destination = bin_dir / name
         if destination.is_dir() and not destination.is_symlink():
             parser.error(f'Command path is a directory: {destination}')
@@ -41,16 +44,17 @@ def main():
                    '--no-build-isolation', '--no-cache-dir']
         if args.offline:
             command.append('--no-index')
-        subprocess.run([*command, str(PROJECT)], check=True)
+        target = str(PROJECT) + ('[gui]' if args.gui else '')
+        subprocess.run([*command, target], check=True)
         env = os.environ.copy()
         env.pop('PYTHONPATH', None)
-        for name in COMMANDS:
+        for name in commands:
             subprocess.run([str(release / 'bin' / name), '--help'],
                            check=True, stdout=subprocess.DEVNULL, env=env)
 
         bin_dir.mkdir(parents=True, exist_ok=True)
         backups = install_root / 'backups' / release.name
-        existing = [name for name in COMMANDS if os.path.lexists(bin_dir / name)]
+        existing = [name for name in commands if os.path.lexists(bin_dir / name)]
         if existing:
             backups.mkdir(parents=True)
             for name in existing:
@@ -60,7 +64,7 @@ def main():
         # activation failure; never remove a release that a command still uses.
         changed = []
         try:
-            for name in COMMANDS:
+            for name in commands:
                 destination = bin_dir / name
                 temporary = bin_dir / f'.{name}-{release.name}'
                 try:
@@ -85,6 +89,8 @@ def main():
         if str(bin_dir) not in os.environ.get('PATH', '').split(os.pathsep):
             print(f'Add {bin_dir} to PATH to run the commands by name.')
         print('No music, metadata, inbox, or device files were changed.')
+        if args.gui and not shutil.which('mpv'):
+            print('Library playback requires mpv: sudo pacman -S mpv')
     finally:
         if not activated:
             shutil.rmtree(release)

@@ -154,19 +154,36 @@ class Cache:
         return self.root / "images" / (hashlib.sha256(url.encode()).hexdigest() + ".img")
 
 
-def request_bytes(url: str, *, max_bytes: int = 12 * 1024 * 1024) -> bytes:
+def request_bytes(url: str, *, max_bytes: int = 12 * 1024 * 1024, operation=None) -> bytes:
     global LAST_MB
     if not url.startswith("https://"):
         raise ValueError("Only HTTPS artwork/API URLs are allowed")
     request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT, "Accept": "application/json,image/*;q=0.9,*/*;q=0.1"})
     for attempt in range(5):
+        if operation:
+            operation.checkpoint()
         if urllib.parse.urlparse(url).hostname == "musicbrainz.org":
             delay = 1.25 - (time.monotonic() - LAST_MB)
             if delay > 0:
-                time.sleep(delay)
+                if operation:
+                    operation.cancelled.wait(delay)
+                    operation.checkpoint()
+                else:
+                    time.sleep(delay)
         try:
             with urllib.request.urlopen(request, timeout=25) as resp:
-                data = resp.read(max_bytes + 1)
+                if operation:
+                    chunks, size = [], 0
+                    while size <= max_bytes:
+                        operation.checkpoint()
+                        chunk = resp.read(min(64 * 1024, max_bytes + 1 - size))
+                        if not chunk:
+                            break
+                        chunks.append(chunk)
+                        size += len(chunk)
+                    data = b''.join(chunks)
+                else:
+                    data = resp.read(max_bytes + 1)
             if len(data) > max_bytes:
                 raise ValueError(f"Response exceeds {max_bytes // (1024*1024)} MiB: {url}")
             return data
@@ -180,6 +197,7 @@ def request_bytes(url: str, *, max_bytes: int = 12 * 1024 * 1024) -> bytes:
                 wait = max(2 ** (attempt + 1), float(retry_after)) if retry_after else 2 ** (attempt + 1)
             except ValueError:
                 wait = 2 ** (attempt + 1)
+            e.close()
         except (urllib.error.URLError, TimeoutError, OSError) as e:
             if attempt == 4:
                 raise
@@ -187,8 +205,13 @@ def request_bytes(url: str, *, max_bytes: int = 12 * 1024 * 1024) -> bytes:
         finally:
             if urllib.parse.urlparse(url).hostname == "musicbrainz.org":
                 LAST_MB = time.monotonic()
-        print(f"  Network issue; retrying in {wait:.0f}s ({attempt + 1}/4)...")
-        time.sleep(min(wait, 30))
+        if not operation:
+            print(f"  Network issue; retrying in {wait:.0f}s ({attempt + 1}/4)...")
+        if operation:
+            operation.cancelled.wait(min(wait, 30))
+            operation.checkpoint()
+        else:
+            time.sleep(min(wait, 30))
     raise RuntimeError("Network retry limit exceeded")
 
 
@@ -196,7 +219,8 @@ def json_request(url: str, cache: Cache) -> dict:
     cached = cache.json_get(url)
     if cached is not None:
         return cached
-    doc = json.loads(request_bytes(url, max_bytes=2 * 1024 * 1024))
+    options = {'operation': cache.operation} if getattr(cache, 'operation', None) else {}
+    doc = json.loads(request_bytes(url, max_bytes=2 * 1024 * 1024, **options))
     if not isinstance(doc, dict):
         raise ValueError("JSON response was not an object")
     cache.json_put(url, doc)
@@ -270,7 +294,8 @@ def itunes_candidates(artist: str, album: str, cache: Cache) -> list[Candidate]:
             continue
         artwork = row.get("artworkUrl100", "")
         parsed = urllib.parse.urlparse(artwork)
-        if parsed.scheme not in {"http", "https"} or not (parsed.hostname or "").endswith("mzstatic.com"):
+        host = parsed.hostname or ""
+        if parsed.scheme not in {"http", "https"} or not (host == "mzstatic.com" or host.endswith(".mzstatic.com")):
             continue
         # Apple's image CDN generally supports requested image dimensions.
         higher = re.sub(r"100x100", "1200x1200", parsed._replace(scheme="https").geturl())
@@ -295,7 +320,8 @@ def download_candidate(candidate: Candidate, cache: Cache) -> bool:
             urls += [candidate.url.replace("1200x1200", dim) for dim in ("600x600", "100x100")]
         for trial_url in urls:
             try:
-                raw = request_bytes(trial_url)
+                options = {'operation': cache.operation} if getattr(cache, 'operation', None) else {}
+                raw = request_bytes(trial_url, **options)
                 with Image.open(io.BytesIO(raw)) as im:
                     im.verify()
                 tmp = path.with_suffix(".part")
@@ -303,6 +329,8 @@ def download_candidate(candidate: Candidate, cache: Cache) -> bool:
                 tmp.replace(path)
                 break
             except (OSError, urllib.error.HTTPError, ValueError) as exc:
+                if isinstance(exc, urllib.error.HTTPError):
+                    exc.close()
                 if trial_url == urls[-1]:
                     print(f"  Artwork unavailable ({exc})")
                     return False

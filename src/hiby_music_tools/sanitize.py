@@ -37,6 +37,10 @@ from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 
 from hiby_music_tools.paths import metadata_dir
+from hiby_music_tools.core.metadata import TrackMetadata
+from hiby_music_tools.core.naming import (
+    INVALID_COMPONENT_CHARS, build_destination, safe_component, unique_destination,
+)
 from typing import Iterable, Optional
 
 try:
@@ -62,7 +66,6 @@ AUDIO_EXTENSIONS = {
     ".wav", ".wave", ".aif", ".aiff", ".ape", ".wma", ".wv", ".dsf", ".dff",
 }
 
-INVALID_COMPONENT_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
 YEAR_RE = re.compile(r"(?<!\d)(18|19|20|21)\d{2}(?!\d)")
 DOMAIN_LIKE_RE = re.compile(
     r"(?:https?://|www\.|(?:^|\s)[A-Za-z0-9_-]+\.(?:com|net|org|io|co|me|tv|cc|to)(?:\s|$))",
@@ -90,18 +93,6 @@ CACHE_ALBUM_YEARS_KEY = "__album_year_overrides__"
 VARIOUS_ARTISTS_NAMES = {
     "various artists", "various", "va", "v.a.", "soundtrack",
 }
-
-
-@dataclass
-class TrackMetadata:
-    # artist is the preferred folder artist (album artist first, then track artist).
-    artist: Optional[str]
-    track_artist: Optional[str]
-    album_artist: Optional[str]
-    title: Optional[str]
-    album: Optional[str]
-    year: Optional[str]
-    metadata_error: Optional[str] = None
 
 
 @dataclass
@@ -229,21 +220,6 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     return p.parse_args()
-
-
-def safe_component(value: str, max_len: int = 140) -> str:
-    """Make a metadata value safe as a single exFAT/FAT-friendly path component."""
-    value = unicodedata.normalize("NFC", value).strip()
-    value = INVALID_COMPONENT_CHARS.sub("-", value)
-    value = re.sub(r"\s+", " ", value).strip(" .")
-    if not value:
-        return "Unknown"
-
-    if len(value) <= max_len:
-        return value
-
-    digest = hashlib.sha1(value.encode("utf-8", "replace")).hexdigest()[:8]
-    return f"{value[: max_len - 11].rstrip()} - {digest}"
 
 
 def first_tag(tags, keys: Iterable[str]) -> Optional[str]:
@@ -1759,47 +1735,6 @@ def audio_files(source: Path, destination: Path) -> list[Path]:
                 found.append(path)
     found.sort(key=lambda p: str(p).casefold())
     return found
-
-
-def unique_destination(path: Path, source_relative: Path, reserved: set[Path]) -> Path:
-    """Resolve collisions deterministically while keeping the normal name when possible."""
-    if path not in reserved:
-        reserved.add(path)
-        return path
-
-    digest = hashlib.sha1(str(source_relative).encode("utf-8", "replace")).hexdigest()[:8]
-    candidate = path.with_name(f"{path.stem}__{digest}{path.suffix}")
-    i = 2
-    while candidate in reserved:
-        candidate = path.with_name(f"{path.stem}__{digest}_{i}{path.suffix}")
-        i += 1
-    reserved.add(candidate)
-    return candidate
-
-
-def build_destination(
-    source_file: Path,
-    source_root: Path,
-    destination_root: Path,
-    meta: TrackMetadata,
-    reserved: set[Path],
-) -> tuple[Path, bool]:
-    rel = source_file.relative_to(source_root)
-    extension = source_file.suffix
-    title_stem = safe_component(meta.title or source_file.stem)
-    song_name = f"{title_stem}{extension}"
-
-    if not meta.artist:
-        # Keep the source subfolder context, but normalize the filename to TITLE.
-        target = destination_root / "missing-author" / rel.parent / song_name
-        return unique_destination(target, rel, reserved), True
-
-    artist = safe_component(meta.artist)
-    album = safe_component(meta.album or "Unknown Album")
-    # If year is unknown, do not create "Unknown Year-Album". Use Album alone.
-    album_dir = safe_component(f"{meta.year}-{album}") if meta.year else album
-    target = destination_root / artist / album_dir / song_name
-    return unique_destination(target, rel, reserved), False
 
 
 def validate_paths(source: Path, destination: Path) -> tuple[Path, Path]:

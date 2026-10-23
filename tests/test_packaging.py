@@ -8,6 +8,7 @@ import unittest
 import venv
 
 from test_baseline import ROOT, make_track
+import importlib.util
 
 
 class PackagingTests(unittest.TestCase):
@@ -24,7 +25,9 @@ class PackagingTests(unittest.TestCase):
             env['HOME'] = str(home)
             env.pop('PYTHONPATH', None)
             for attempt in range(2):
-                result = subprocess.run([str(ROOT / 'install.sh'), '--offline'],
+                gui = attempt == 1 and importlib.util.find_spec('PySide6') is not None
+                command = [str(ROOT / 'install.sh'), '--offline'] + (['--gui'] if gui else [])
+                result = subprocess.run(command,
                                         cwd=home, env=env, capture_output=True,
                                         text=True, timeout=60)
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -34,6 +37,35 @@ class PackagingTests(unittest.TestCase):
                     check = subprocess.run([str(installed), '--help'], cwd=home,
                                            env=env, capture_output=True, text=True, timeout=10)
                     self.assertEqual(check.returncode, 0, check.stderr)
+                if gui:
+                    self.assertTrue((bin_dir / 'hibysync').is_symlink())
+                    subprocess.run([str(bin_dir / 'hibysync'), '--help'], env=env,
+                                   check=True, capture_output=True, timeout=10)
+                    # A wheel must carry every QML component and the singleton
+                    # manifest, not just the Python launcher. Test away from src.
+                    quick_env = {**env, 'QT_QPA_PLATFORM': 'offscreen', 'QT_QUICK_BACKEND': 'software'}
+                    script = '''
+from PySide6.QtGui import QGuiApplication
+from PySide6.QtCore import QCoreApplication, QEvent
+from hiby_music_tools.gui.quick import create_engine
+app = QGuiApplication([])
+engine, controller = create_engine()
+assert engine.rootObjects(), engine.load_errors
+app.processEvents()
+assert not engine.load_errors, engine.load_errors
+controller.shutdown()
+engine.library_controller.shutdown()
+engine.player_controller.shutdown()
+engine.rootObjects()[0].close()
+engine.deleteLater()
+QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+controller.deleteLater()
+QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+'''
+                    smoke = subprocess.run([str((bin_dir / 'hibysync').resolve().parent / 'python'),
+                                            '-c', script], env=quick_env, cwd=home,
+                                           capture_output=True, text=True, timeout=15)
+                    self.assertEqual(smoke.returncode, 0, smoke.stdout + smoke.stderr)
             root = home / '.local/share/hiby-music-tools'
             backups = list((root / 'backups').iterdir())
             self.assertEqual(len(backups), 2)
@@ -65,7 +97,7 @@ class PackagingTests(unittest.TestCase):
 
             run(bin_dir / 'python', '-m', 'pip', 'install', '--no-index',
                 '--no-deps', '--no-build-isolation', ROOT)
-            for command in ('hiby-music-sanitize', 'hiby-online-art', 'musicimport', 'musicsync'):
+            for command in ('hiby-music-sanitize', 'hiby-online-art', 'musicimport', 'musicsync', 'hibysync'):
                 self.assertIn('usage:', run(bin_dir / command, '--help').stdout)
 
             inbox = home / 'Music/Nicotine'
