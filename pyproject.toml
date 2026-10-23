@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hiby-music-tools"
+version = "0.1.0"
+description = "Prepare and synchronize a local music library for the HiBy R1"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = ["Pillow>=9.1", "mutagen>=1.45"]
+
+[project.scripts]
+hiby-music-sanitize = "hiby_music_tools.sanitize:main"
+hiby-online-art = "hiby_music_tools.online_art:main"
+musicimport = "hiby_music_tools.importer:main"
+musicsync = "hiby_music_tools.sync:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
