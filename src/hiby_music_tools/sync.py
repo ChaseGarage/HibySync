@@ -29,6 +29,7 @@ import time
 from pathlib import Path
 
 from hiby_music_tools.paths import library_dir, metadata_dir
+from hiby_music_tools.core.streaming import copy_stream
 
 AUDIO_EXTENSIONS = {
     ".mp3", ".flac", ".m4a", ".mp4", ".aac", ".ogg", ".opus",
@@ -79,15 +80,30 @@ def init_db(path: Path) -> sqlite3.Connection:
     return con
 
 
-def sha256_file(path: Path) -> str:
+def sha256_file(path: Path, operation=None) -> str:
     h = hashlib.sha256()
     with path.open("rb") as f:
         while True:
+            if operation:
+                operation.checkpoint()
             block = f.read(CHUNK)
             if not block:
                 break
             h.update(block)
     return h.hexdigest()
+
+
+def needs_copy(local_size, remote_size, digest, previous_digest=None, *, verify=False, remote_digest=None):
+    """Shared CLI/preview decision, preserving the original fast-sync policy.
+
+    False in fast mode means unchanged by these rules, not proven byte equality.
+    Frontends must distinguish that from verified equality on a new device.
+    """
+    if remote_size is None or remote_size != local_size:
+        return True
+    if verify:
+        return remote_digest != digest
+    return previous_digest is not None and previous_digest != digest
 
 
 def local_hash(con: sqlite3.Connection, rel: str, path: Path) -> str:
@@ -277,22 +293,8 @@ def safe_copy(src: Path, dst: Path, rel: str, number: int, total_files: int) -> 
         # then stall on close/fsync. Flush each chunk before advancing the bar
         # so progress follows the actual device transfer much more closely.
         with src.open("rb") as rf, temp.open("wb", buffering=0) as wf:
-            while True:
-                block = rf.read(CHUNK)
-                if not block:
-                    break
-
-                wf.write(block)
-
-                try:
-                    os.fsync(wf.fileno())
-                except OSError:
-                    # Some FUSE/MTP backends do not implement fsync. In that
-                    # case the unbuffered write is still better than Python's
-                    # normal userspace buffering.
-                    pass
-
-                progress.update(len(block), force=True)
+            copy_stream(rf, wf, progress=lambda count: progress.update(count - progress.current, force=True),
+                        tolerate_flush_errors=True)
 
         progress.finish()
 
@@ -418,21 +420,10 @@ def main() -> int:
             ).fetchone()
             previous_digest = state[0] if state else None
 
-            needs_copy = rel not in remote
-            if not needs_copy:
-                remote_size = remote[rel].stat().st_size
-                if remote_size != src.stat().st_size:
-                    needs_copy = True
-                elif args.verify:
-                    # Covers cases where two files share a name and byte count
-                    # but contain different audio tags, embedded art, or audio.
-                    needs_copy = sha256_file(remote[rel]) != digest
-                elif previous_digest is not None and previous_digest != digest:
-                    # Normal fast path detects local metadata changes since the
-                    # previous sync, even when the size stays unchanged.
-                    needs_copy = True
-
-            if needs_copy:
+            remote_size = remote[rel].stat().st_size if rel in remote else None
+            remote_digest = sha256_file(remote[rel]) if args.verify and remote_size == src.stat().st_size else None
+            if needs_copy(src.stat().st_size, remote_size, digest, previous_digest,
+                          verify=args.verify, remote_digest=remote_digest):
                 to_copy.append((rel, src, dst, digest))
             else:
                 unchanged.append(rel)

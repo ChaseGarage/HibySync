@@ -1,6 +1,24 @@
 # Changelog
 
-## Unreleased
+## 0.3.0 — 2026-10-23
+
+- Keep full content verification optional; normal device sync uses scoped file
+  fingerprints and verifies transferred files without rereading unchanged audio.
+- Handle unambiguous case/Unicode filename differences without unsafe Add/Remove
+  pairs, retaining the device filename spelling.
+
+- Connect Device sync through explicit refreshed-plan and removal confirmation.
+- Add measured streaming/native-GIO transfers, per-file/overall progress, activity,
+  cancellation, recovery logs, retry and SHA-256 verification of transfers.
+- Stage and verify updates before publication, preserve recovery originals and block
+  removals after failure, stale/incomplete scans or disconnection.
+- Keep CLI behavior while sharing its measured streaming loop with the GUI backend.
+
+- Add a read-only Device sync dashboard with live Linux USB/mount validation,
+  manual storage selection, progress/cancellation and lightweight disconnect checks.
+- Reuse CLI size/hash decisions while reporting unverified same-size matches,
+  collisions, empty-source protection and explicit removal previews.
+- Preserve CLI transfer behavior while adding guarded GUI execution.
 
 - Add mouse Back/Forward UI history and compact green source-rate/depth in the player.
 - Explain how to repair a missing MPRIS dependency in source-checkout launches.
@@ -36,4 +54,4 @@
 - Preserve existing CLI and device synchronization behavior.
 
 Exclusive-output configuration and playback history remain future work. Device synchronization remains available
-through the CLI; its GUI page is a placeholder.
+through the CLI; the GUI provides validated comparison and confirmed synchronization.

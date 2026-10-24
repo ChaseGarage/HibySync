@@ -16,6 +16,7 @@ class LibraryController(QObject):
     changed = Signal()
     safeToClose = Signal()
     navigationRequested = Signal()
+    catalogChanged = Signal()
 
     def __init__(self, source_controller, database=None):
         super().__init__()
@@ -311,6 +312,7 @@ class LibraryController(QObject):
         if self._index_root != self._root or self._closing:
             return
         self._message = f'{result.errors} unreadable tracks. Other music is available to browse.' if result.errors else ''
+        self.catalogChanged.emit()
         self._reload()
 
     @Slot(str)

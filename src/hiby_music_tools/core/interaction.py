@@ -24,6 +24,9 @@ class Operation:
         self.cancelled = Event()
         self.report = report or (lambda event: None)
 
+    def cancel(self):
+        self.cancelled.set()
+
     def checkpoint(self):
         if self.cancelled.is_set():
             raise Cancelled()

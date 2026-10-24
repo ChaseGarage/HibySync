@@ -93,6 +93,11 @@ def main():
             print('Library playback requires mpv: sudo pacman -S mpv')
         if args.gui and (not shutil.which('ffmpeg') or not shutil.which('ffprobe')):
             print('Library metadata saves require audio verification: sudo pacman -S ffmpeg')
+        if args.gui:
+            gio = subprocess.run([str(python), '-c', 'import gi; gi.require_version("Gio", "2.0"); from gi.repository import Gio'],
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=env)
+            if gio.returncode:
+                print('Optional native MTP sync requires GIO: sudo pacman -S python-gobject gvfs gvfs-mtp')
     finally:
         if not activated:
             shutil.rmtree(release)

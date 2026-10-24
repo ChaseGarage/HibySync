@@ -247,6 +247,8 @@ class MetadataController(QObject):
 
     def _saved(self, report):
         self.player.finishMaintenance(report.updates)
+        if report.updates:
+            self.browser.catalogChanged.emit()
         self._writing = False
         self._report = dict(recovery=report.recovery, indexError=report.index_error, cancelled=report.cancelled,
                             saved=sum(f['status'] == 'saved' for f in report.files),
@@ -291,7 +293,7 @@ class MetadataController(QObject):
     def _apple_notice(self, message):
         self.apple_timer.stop()
         self._apple_message = message
-        if message:
+        if message and not self._closing:
             self.apple_timer.start()
         self.appleMessageChanged.emit()
 
@@ -393,6 +395,7 @@ class MetadataController(QObject):
     @Slot(result=bool)
     def requestClose(self):
         self._closing = True
+        self.apple_timer.stop()
         if self._pending_save is not None or self._cancel_waiting:
             self._pending_save = None
             self._cancel_waiting = False

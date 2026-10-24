@@ -30,6 +30,12 @@ class RecordModel(QAbstractListModel):
         self.rows = rows
         self.endResetModel()
 
+    def append(self, row):
+        index = len(self.rows)
+        self.beginInsertRows(QModelIndex(), index, index)
+        self.rows.append(row)
+        self.endInsertRows()
+
     def update(self, row, values):
         self.rows[row] = {**self.rows[row], **values}
         self.dataChanged.emit(self.index(row), self.index(row), [self.RecordRole])

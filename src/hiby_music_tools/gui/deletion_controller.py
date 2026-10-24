@@ -108,6 +108,8 @@ class DeletionController(QObject):
 
     def _done(self, report):
         self.player.finishDeletion(report.removed)
+        if report.removed:
+            self.browser.catalogChanged.emit()
         self._rows.replace([dict(path=r['path'], status=r['status'], error=r['error'] or r['warning']) for r in report.files])
         failed = sum(r['status'] == 'failed' for r in report.files)
         deleted = sum(r['status'] == 'deleted' for r in report.files)
@@ -126,7 +128,8 @@ class DeletionController(QObject):
         else:
             self._open = False
             self._notice = f'{deleted} audio file(s) permanently deleted.' if deleted else 'Missing files removed from the Library index.'
-            self.timer.start()
+            if not self._closing:
+                self.timer.start()
         self.changed.emit()
 
     def _failed(self, message):
@@ -164,6 +167,7 @@ class DeletionController(QObject):
     @Slot(result=bool)
     def requestClose(self):
         self._closing = True
+        self.timer.stop()
         if self._waiting:
             self._waiting = self._cancel_waiting = False
             self.player.finishDeletion(set())

@@ -38,6 +38,7 @@ def main():
         from hiby_music_tools.playback.state import state_path
         engine, controller = create_engine(args.inbox, args.library, player_state=state_path(), enable_mpris=True)
         if not engine.rootObjects():
+            engine.device_controller.shutdown()
             engine.playlist_controller.shutdown()
             engine.deletion_controller.shutdown()
             controller.shutdown()
@@ -47,6 +48,7 @@ def main():
             print('\n'.join(engine.load_errors) or 'Unable to load the HibySync QML interface.', file=sys.stderr)
             return 2
         result = app.exec()
+        engine.device_controller.shutdown()
         if engine.mpris:
             engine.mpris.shutdown()
         engine.playlist_controller.shutdown()

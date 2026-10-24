@@ -26,7 +26,9 @@ holds folder paths instead of displaying path forms on the main screen.
 
 Library has an independent SQLite backend, paged Qt model, asynchronous thumbnail
 provider, and worker controller. Its album grid, artist browser, song list, and
-album details reuse the existing design tokens. Device remains a placeholder.
+album details reuse the existing design tokens. Device adds validated connection
+status, background comparison, explicit mirror confirmation and measured transfer
+progress using the same tokens.
 See [Library indexing](library.md) for storage and refresh guarantees.
 
 A persistent player bar and queue drawer use a separate playback controller and
@@ -101,6 +103,12 @@ Synchronization and importer behavior are unchanged.
   writing, encoded/decoded audio verification, backups/journaling, and index repair.
 - `gui/metadata_controller.py`, `editor_artwork.py`: focused metadata editing,
   background save/artwork tasks, and full-resolution image previews.
+- `device/detection.py`, `preview.py`: validated Linux USB/GVFS identity and
+  read-only mirror planning using shared CLI comparison rules.
+- `gui/device_controller.py`, `device_sync.py`: background jobs, liveness, explicit
+  consent and measured transfer presentation.
+- `device/execution.py`, `transports.py`, `events.py`: staged verified sync, guarded
+  filesystem/native GIO IO, cancellation, recovery and structured progress.
 - `gui/qml/`: design tokens, reusable controls, and dedicated pages.
 - `gui/models.py`, `details.py`, `window.py`: preserved Widgets frontend.
 - `gui/app.py`: default QML / `--widgets` launcher and application lifecycle.
@@ -228,3 +236,6 @@ WAV files and, when ffmpeg is available, FLAC/MP3/M4A/Ogg/Opus/AIFF fixtures.
 FFmpeg is optional for Import/indexing and required for Library-save audio verification.
 A real Hyprland session is still needed to assess compositor-specific
 scaling, graphics-driver behavior, and native folder pickers.
+
+The Device dashboard is documented in [device.md](device.md), including GVFS
+mounting limits, unverified size matches, explicit sync confirmation and recovery.

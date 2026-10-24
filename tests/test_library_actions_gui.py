@@ -82,6 +82,10 @@ class LibraryActionsGuiTests(unittest.TestCase):
         self.assertEqual(editor.appleMessage, 'No matches found')
         self.assertFalse(editor.error)
         self.assertEqual(self.engine.load_errors, [])
+        editor.requestClose()
+        self.assertFalse(editor.apple_timer.isActive())
+        editor._apple_notice('Late search response')
+        self.assertFalse(editor.apple_timer.isActive())
 
     def test_song_delete_cancel_then_confirm_releases_player_and_repairs_queue(self):
         self.browser.setMode('songs')
@@ -111,6 +115,8 @@ class LibraryActionsGuiTests(unittest.TestCase):
         self.assertFalse(deletion.open)
         self.assertEqual(len(tracks(self.music, self.database)), 2)
         self.assertEqual(self.engine.load_errors, [])
+        deletion.requestClose()
+        self.assertFalse(deletion.timer.isActive())
 
     def test_album_delete_from_context_menu_returns_to_album_browser(self):
         self.idle()

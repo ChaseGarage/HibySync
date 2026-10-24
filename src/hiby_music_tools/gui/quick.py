@@ -13,6 +13,7 @@ from .metadata_controller import MetadataController
 from .deletion_controller import DeletionController
 from .playlist_controller import PlaylistController
 from .navigation import Navigation
+from .device_controller import DeviceController
 
 
 def set_interface_font():
@@ -26,7 +27,7 @@ def set_interface_font():
     return family
 
 
-def create_engine(inbox=None, library=None, *, library_database=None, player_state=None, playback_service=None, playlist_database=None, enable_mpris=False):
+def create_engine(inbox=None, library=None, *, library_database=None, player_state=None, playback_service=None, playlist_database=None, enable_mpris=False, device_backend=None):
     family = set_interface_font()
     # Keep native wheel acceleration and pixel-based touchpad gestures, while
     # making mouse-wheel notches cover a useful distance in long music lists.
@@ -44,6 +45,12 @@ def create_engine(inbox=None, library=None, *, library_database=None, player_sta
     playlists = PlaylistController(library_controller, player, playlist_database or (player_state.parent / 'playlists.sqlite3' if player_state else None))
     navigation = Navigation(controller, library_controller, playlists)
     navigation.setParent(engine)
+    device = DeviceController(controller, library_controller, player, device_backend)
+    # Qt owns timers/workers on the GUI thread. Python cyclic GC can otherwise
+    # collect a parentless controller on an indexing worker and leave Qt timers
+    # registered on the wrong thread during repeated engine teardown.
+    device.setParent(engine)
+    engine.destroyed.connect(device.shutdown)
     # Keep both Python wrappers alive for the entire engine lifetime. Qt owns
     # the provider after registration; the controller only registers thumbnails.
     engine.review_controller = controller
@@ -53,6 +60,7 @@ def create_engine(inbox=None, library=None, *, library_database=None, player_sta
     engine.deletion_controller = deletion
     engine.playlist_controller = playlists
     engine.navigation = navigation
+    engine.device_controller = device
     engine.addImageProvider('artwork', controller.provider)
     engine.addImageProvider('library', library_controller.provider)
     engine.addImageProvider('editor-artwork', editor.provider)
@@ -64,6 +72,7 @@ def create_engine(inbox=None, library=None, *, library_database=None, player_sta
     engine.rootContext().setContextProperty('libraryDeletion', deletion)
     engine.rootContext().setContextProperty('libraryPlaylists', playlists)
     engine.rootContext().setContextProperty('uiNavigation', navigation)
+    engine.rootContext().setContextProperty('deviceDashboard', device)
     controller.changed.connect(library_controller.syncRoot)
     controller.libraryChanged.connect(library_controller.markChanged)
     library_controller.navigationRequested.connect(lambda: controller.navigate('library'))

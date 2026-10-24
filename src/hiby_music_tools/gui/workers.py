@@ -37,4 +37,4 @@ class Task(QThread):
             self.failed.emit(str(exc))
 
     def cancel(self):
-        self.operation.cancelled.set()
+        self.operation.cancel()

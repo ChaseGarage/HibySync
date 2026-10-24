@@ -92,8 +92,7 @@ The CLI's existing inbox-cleanup behavior is unchanged. GUI edits remain in memo
 applied to imported copies; they are not written back to incoming tags or
 saved as a new correction-cache entry. Scanning remains read-only and offline;
 Apple searches explicitly write to the existing artwork cache. MusicBrainz
-suggestions and manually browsing for artwork remain planned. Device remains a
-placeholder. The `--widgets` fallback remains the earlier review-only
+suggestions and manually browsing for artwork remain planned. Device provides comparison, explicit confirmation, measured sync progress and recovery. The `--widgets` fallback remains the earlier review-only
 interface. See [GUI architecture and limits](docs/gui.md).
 
 HibySync opens in **Library**, loading the existing index without scanning music
@@ -182,6 +181,19 @@ audio configuration is changed. MPRIS exposes controls/metadata to desktop media
 clients without registering multiple sessions. Read [audio behavior and limitations](docs/playback.md)
 for gapless verification, device fallback, media keys, and why these diagnostics
 do not establish bit-perfect output.
+
+The **Device** tab validates the R1 identity and mounted `/Music`, compares the
+configured library, and supports confirmed one-way synchronization. Normal sync
+uses sizes and device/source-scoped fingerprint history; it does not hash unchanged
+device audio. **Verify contents** is an optional full SHA-256 check for troubleshooting
+or initial same-size differences without history. Transferred files are always
+verified. **Sync Device** refreshes the plan before
+confirmation; removals require a separate consent checkbox. Two measured progress
+bars, activity, cancellation, recovery logs and retry stay in the Device tab.
+Mounted filesystems use streaming IO; MTP writes use native GIO callbacks and
+staged publication. On Arch, MTP execution needs `python-gobject gvfs gvfs-mtp`.
+See [Device sync and recovery](docs/device.md) for transport limits and a safe
+spare-card manual test; actual MTP hardware behavior is not certified by local tests.
 
 ## Workflow
 
