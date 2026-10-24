@@ -64,6 +64,10 @@ if QT:
             self.calls.append(('close',))
             self.closed.emit()
 
+        def release(self):
+            self.calls.append(('release',))
+            self.released.emit()
+
 
 @unittest.skipUnless(QT, 'Install PySide6 for player presentation tests')
 class PlayerGuiTests(unittest.TestCase):
@@ -231,6 +235,8 @@ class PlayerGuiTests(unittest.TestCase):
         self.player.cycleRepeat()
         self.player.toggleShuffle()
         self.player.seek(18)
+        self.audio.audioChanged.emit({'audio-device-list': [{'name':'pipewire/test','description':'Fixture DAC'}]})
+        self.player.selectAudioDevice('pipewire/test')
         state = self.root / 'state/player.json'
         self.player._persist = True
         self.player._state_file = state
@@ -243,6 +249,7 @@ class PlayerGuiTests(unittest.TestCase):
         self.wait(lambda: not restored.busy)
         self.assertEqual(restored.state, 'stopped')
         self.assertEqual(restored.volume, 84)
+        self.assertEqual(restored.audioDevice, 'pipewire/test')
         self.assertEqual(restored.repeat, 'all')
         self.assertTrue(restored.shuffle)
         self.assertEqual(restored.position, 18)

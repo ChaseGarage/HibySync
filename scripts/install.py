@@ -19,7 +19,7 @@ def main():
     parser.add_argument('--offline', action='store_true',
                         help='forbid package index access; use installed dependencies')
     parser.add_argument('--gui', action='store_true',
-                        help='install optional PySide6 dependency and GUI launcher')
+                        help='install PySide6/dbus-next dependencies and GUI launcher')
     args = parser.parse_args()
     commands = (*COMMANDS, 'hibysync') if args.gui else COMMANDS
     home = Path.home()
@@ -91,6 +91,8 @@ def main():
         print('No music, metadata, inbox, or device files were changed.')
         if args.gui and not shutil.which('mpv'):
             print('Library playback requires mpv: sudo pacman -S mpv')
+        if args.gui and (not shutil.which('ffmpeg') or not shutil.which('ffprobe')):
+            print('Library metadata saves require audio verification: sudo pacman -S ffmpeg')
     finally:
         if not activated:
             shutil.rmtree(release)

@@ -10,6 +10,7 @@ ColumnLayout {
     property alias placeholderText: editor.placeholderText
     property alias editorName: editor.objectName
     signal accepted()
+    signal edited(string value)
     spacing: 8
     Type { id: caption; color: Theme.muted; font.pixelSize: 12; visible: text.length > 0 }
     TextField {
@@ -26,6 +27,7 @@ ColumnLayout {
         font.pixelSize: Theme.body
         selectByMouse: true
         onAccepted: field.accepted()
+        onTextEdited: field.edited(text)
         Accessible.name: caption.text
         background: Rectangle {
             color: Theme.surface

@@ -19,7 +19,8 @@ song titles, artists, and albums using normalized Unicode case folding and
 literal substring matching. It is debounced and runs against SQLite in a worker.
 Album details show track numbers, disc groups, track count, and total duration.
 Playback and the independent queue are documented in [playback.md](playback.md).
-Library tag editing remains a future milestone.
+Library tag editing is available through the focused
+[metadata editor](metadata.md), independently of read-only indexing.
 
 ## Storage and authority
 

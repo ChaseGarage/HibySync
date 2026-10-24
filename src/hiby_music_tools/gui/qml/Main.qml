@@ -22,7 +22,7 @@ ApplicationWindow {
     property var folderTarget: null
     property int chosenArtwork: -1
     property bool artForTrack: false
-    readonly property string currentSection: controller.page === "library" ? "library" : controller.page === "device" ? "device" : "import"
+    readonly property string currentSection: controller.page === "settings" ? "settings" : controller.page === "library" ? "library" : controller.page === "device" ? "device" : "import"
     readonly property real outerMargin: Theme.outerMargin(width)
     readonly property real sectionMaxWidth: currentSection === "library" ? Theme.libraryMaxWidth : Theme.maxWidth
     function playbackShortcutAllowed() {
@@ -32,7 +32,7 @@ ApplicationWindow {
                 return false
             item = item.parent
         }
-        return !artDialog.opened && !trackDrawer.opened && !queueDrawer.opened && !importDialog.opened && !rescanDialog.opened
+        return !libraryPlaylists.choosing && !libraryDeletion.open && !libraryEditor.open && !artDialog.opened && !trackDrawer.opened && !queueDrawer.opened && !importDialog.opened && !rescanDialog.opened
     }
     Shortcut {
         sequence: "Space"
@@ -40,11 +40,35 @@ ApplicationWindow {
         enabled: window.playbackShortcutAllowed()
         onActivated: playback.togglePause()
     }
+    function navigateBack() {
+        // Editing and destructive confirmations keep their explicit actions.
+        if (libraryEditor.open || libraryDeletion.open || importDialog.opened || rescanDialog.opened) return
+        if (libraryPlaylists.choosing) { if (!libraryPlaylists.busy) libraryPlaylists.dismiss(); return }
+        if (artDialog.opened) { if (!controller.artworkBusy) artDialog.close(); return }
+        if (trackDrawer.opened) { trackDrawer.close(); return }
+        if (queueDrawer.opened) { queueDrawer.close(); return }
+        uiNavigation.back()
+    }
+    function navigateForward() {
+        if (!libraryEditor.open && !libraryDeletion.open && !libraryPlaylists.choosing &&
+                !artDialog.opened && !trackDrawer.opened && !queueDrawer.opened &&
+                !importDialog.opened && !rescanDialog.opened) uiNavigation.forward()
+    }
+    Connections {
+        target: uiNavigation
+        function onBackRequested() { window.navigateBack() }
+        function onForwardRequested() { window.navigateForward() }
+    }
+    Shortcut { sequence: "Alt+Left"; onActivated: window.navigateBack() }
+    Shortcut { sequence: "Alt+Right"; onActivated: window.navigateForward() }
     onClosing: function(close) {
+        const playlistsReady = libraryPlaylists.requestClose()
+        const deletionReady = libraryDeletion.requestClose()
+        const editorReady = libraryEditor.requestClose()
         const importReady = controller.requestClose()
         const libraryReady = libraryBrowser.requestClose()
         const playerReady = playback.requestClose()
-        close.accepted = importReady && libraryReady && playerReady
+        close.accepted = importReady && libraryReady && playerReady && editorReady && deletionReady && playlistsReady
     }
 
     Connections {
@@ -58,6 +82,12 @@ ApplicationWindow {
         function onSafeToClose() { window.close() }
     }
     Connections { target: playback; function onSafeToClose() { window.close() } }
+    Connections { target: libraryEditor; function onSafeToClose() { window.close() } }
+    LibraryMetadataEditor { manager: libraryEditor }
+    Connections { target: libraryDeletion; function onSafeToClose() { window.close() } }
+    LibraryDeleteDialog { manager: libraryDeletion }
+    Connections { target: libraryPlaylists; function onSafeToClose() { window.close() } }
+    PlaylistPicker {}
 
     Item {
         id: header
@@ -80,7 +110,7 @@ ApplicationWindow {
                 }
             }
             Item { Layout.fillWidth: true }
-            IconButton { text: "Music folders"; glyph: "settings"; enabled: !window.controller.busy; onClicked: window.controller.navigate("settings") }
+            IconButton { text: "Settings"; glyph: "settings"; enabled: !window.controller.busy; onClicked: { playback.refreshAudioDevices(); window.controller.navigate("settings") } }
         }
     }
     Divider { y: header.height; width: parent.width }
@@ -94,6 +124,7 @@ ApplicationWindow {
         anchors.bottomMargin: 24
         width: Math.min(parent.width - window.outerMargin * 2, window.sectionMaxWidth)
         spacing: 20
+        Type { text: libraryDeletion.notice; visible: text.length > 0; color: Theme.success; font.pixelSize: Theme.small; Layout.fillWidth: true }
         ColumnLayout {
             visible: window.controller.busy
             Layout.fillWidth: true

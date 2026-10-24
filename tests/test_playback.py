@@ -308,6 +308,140 @@ class MpvTests(unittest.TestCase):
                 obj.deleteLater()
             QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
 
+    def test_library_save_releases_real_mpv_and_repaired_queue_plays_moved_file(self):
+        from hiby_music_tools.gui.quick import create_engine
+        music = self.root / 'music'
+        tone(music / 'track.wav', 5)
+        database = self.root / 'index.sqlite3'
+        refresh(music, database)
+        service = self.service(output='null')
+        engine, importer = create_engine(self.root / 'inbox', music, library_database=database,
+                                         playback_service=service, player_state=self.root / 'player.json')
+        player, browser, editor = engine.player_controller, engine.library_controller, engine.metadata_controller
+        released = []
+        service.released.connect(lambda: released.append(not service.running))
+        try:
+            self.wait(lambda: not player.busy)
+            row = tracks(music, database)[0]
+            player.trackAction(row['id'], 'play')
+            self.wait(lambda: player.position > .1)
+            editor.edit('track', row['id'], True)
+            self.wait(lambda: not editor.busy)
+            editor.setField('title', 'Renamed while listening')
+            editor.buildPreview()
+            self.wait(lambda: not editor.busy)
+            destination = editor.preview.rows[0]['destination']
+            editor.save()
+            self.wait(lambda: not editor.busy)
+            self.assertEqual(released, [True])
+            self.assertEqual(editor.report['saved'], 1, editor.results.rows)
+            self.assertFalse(Path(row['path']).exists())
+            self.assertEqual(player.current['path'], destination)
+            self.assertEqual(player.state, 'stopped')
+            editor.dismiss()
+            player.togglePause()
+            self.wait(lambda: player.state == 'playing' and player.position > .4)
+            self.assertEqual(service.errors, [])
+            self.assertEqual(engine.load_errors, [])
+        finally:
+            editor.shutdown()
+            player.shutdown()
+            browser.shutdown()
+            importer.shutdown()
+            engine.deleteLater()
+            QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+            for obj in (editor, player, browser, importer):
+                obj.deleteLater()
+            QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+
+    def test_unrelated_metadata_save_and_library_refresh_keep_real_playback_running(self):
+        from hiby_music_tools.gui.quick import create_engine
+        music = self.root / 'music'
+        tone(music / 'listening.wav', 12)
+        tone(music / 'other.wav', 1)
+        database = self.root / 'index.sqlite3'
+        refresh(music, database)
+        service = self.service(output='null')
+        engine, importer = create_engine(self.root / 'inbox', music, library_database=database,
+                                         playback_service=service, player_state=self.root / 'player.json')
+        player, browser, editor = engine.player_controller, engine.library_controller, engine.metadata_controller
+        released = []
+        service.released.connect(lambda: released.append(True))
+        try:
+            self.wait(lambda: not player.busy)
+            rows = tracks(music, database)
+            player.trackAction(rows[0]['id'], 'play')
+            self.wait(lambda: player.position > .1 and not service._syncing and not service._commands and not service._inflight)
+            before, qid = player.position, player.currentQueueId
+            browser.refresh(False)
+            self.wait(lambda: not browser.indexing)
+            self.assertEqual(player.currentQueueId, qid)
+            editor.edit('track', rows[1]['id'], False)
+            self.wait(lambda: not editor.busy)
+            editor.setField('title', 'Unrelated correction')
+            editor.buildPreview()
+            self.wait(lambda: not editor.busy)
+            self.assertTrue(service.can_write_unreferenced([rows[1]['path']]))
+            editor.save()
+            self.wait(lambda: not editor.busy)
+            self.assertEqual(editor.report['saved'], 1, editor.results.rows)
+            self.assertEqual(released, [])
+            self.assertEqual(player.state, 'playing')
+            self.assertEqual(player.currentQueueId, qid)
+            self.wait(lambda: player.position > before)
+            self.assertEqual(service.errors, [])
+        finally:
+            for obj in (engine.playlist_controller, engine.deletion_controller, editor, player, browser, importer):
+                obj.shutdown()
+            engine.deleteLater()
+            QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+            for obj in (editor, player, browser, importer): obj.deleteLater()
+            QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+
+    def test_delete_releases_real_mpv_and_surviving_queue_plays(self):
+        from hiby_music_tools.gui.quick import create_engine
+        music = self.root / 'music'
+        tone(music / 'first.wav', 5)
+        tone(music / 'second.wav', 5)
+        database = self.root / 'index.sqlite3'
+        refresh(music, database)
+        service = self.service(output='null')
+        engine, importer = create_engine(self.root / 'inbox', music, library_database=database,
+                                         playback_service=service, player_state=self.root / 'player.json')
+        player, browser = engine.player_controller, engine.library_controller
+        editor, deletion = engine.metadata_controller, engine.deletion_controller
+        released = []
+        service.released.connect(lambda: released.append(not service.running))
+        try:
+            self.wait(lambda: not player.busy)
+            rows = tracks(music, database)
+            player.trackAction(rows[0]['id'], 'play')
+            self.wait(lambda: player.position > .1)
+            player.trackAction(rows[1]['id'], 'append')
+            self.wait(lambda: not player.busy)
+            deletion.request('track', rows[0]['id'])
+            self.wait(lambda: not deletion.busy)
+            self.assertTrue(Path(rows[0]['path']).exists())
+            deletion.confirm()
+            self.wait(lambda: not deletion.busy)
+            self.assertEqual(released, [True])
+            self.assertFalse(Path(rows[0]['path']).exists())
+            self.assertEqual(len(tracks(music, database)), 1)
+            self.assertEqual(player.current['id'], rows[1]['id'])
+            self.assertEqual(player.state, 'stopped')
+            player.togglePause()
+            self.wait(lambda: player.state == 'playing' and player.position > .2)
+            self.assertEqual(service.errors, [])
+            self.assertEqual(engine.load_errors, [])
+        finally:
+            for obj in (deletion, editor, player, browser, importer):
+                obj.shutdown()
+            engine.deleteLater()
+            QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+            for obj in (deletion, editor, player, browser, importer):
+                obj.deleteLater()
+            QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+
     def test_pipewire_output_integration_when_explicitly_requested(self):
         if os.environ.get('HIBYSYNC_TEST_PIPEWIRE') != '1':
             self.skipTest('Opt in with HIBYSYNC_TEST_PIPEWIRE=1 for a short audible tone')
@@ -322,6 +456,36 @@ class MpvTests(unittest.TestCase):
         self.wait(lambda: 'params' in result)
         self.assertEqual(result['ao'], 'pipewire')
         self.assertGreater(result['params']['samplerate'], 0)
+        self.assertEqual(service.errors, [])
+
+    def test_device_enumeration_selection_and_confirmed_output_diagnostics(self):
+        service = self.service(output='null')
+        audio = []
+        service.audioChanged.connect(lambda data: audio.append(data))
+        service.refresh_devices()
+        self.wait(lambda: any(isinstance(d.get('audio-device-list'), list) for d in audio))
+        self.assertIn('auto', {d['name'] for d in audio[-1]['audio-device-list']})
+        entry = tone(self.root / 'diagnostic.wav', 3, rate=48000)
+        service.sync([entry], entry['qid'], restart=True)
+        self.wait(lambda: any(d.get('audio-out-params') for d in audio))
+        self.assertEqual(audio[-1]['current-ao'], 'null')
+        self.assertEqual(audio[-1]['audio-params']['samplerate'], 48000)
+        service.select_device('auto')
+        self.wait(lambda: audio[-1].get('audio-device') == 'auto')
+        service._device = 'pipewire/disconnected-fixture'
+        service._device_list([{'name':'auto','description':'Default'}])
+        self.assertEqual(service._device, 'auto')
+        self.assertTrue(any('unavailable' in error for _, error in service.errors))
+
+    def test_default_driver_preference_can_be_reset_without_playing_audio(self):
+        service = self.service()
+        service.refresh_devices()
+        self.wait(lambda: service._connected_flag and 'audio-device-list' in service._audio)
+        service.select_device('auto')
+        result = []
+        service._command(['get_property', 'audio-device'], result.append)
+        self.wait(lambda: bool(result))
+        self.assertEqual(result, ['auto'])
         self.assertEqual(service.errors, [])
 
     def test_large_queue_planning_yields_and_stop_never_restarts(self):

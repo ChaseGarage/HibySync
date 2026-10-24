@@ -5,7 +5,7 @@
 On CachyOS/Arch:
 
 ```sh
-sudo pacman -S mpv pyside6 python-pillow python-mutagen python-setuptools python-pip
+sudo pacman -S mpv ffmpeg pyside6 python-dbus-next python-pillow python-mutagen python-setuptools python-pip
 ./install.sh --gui
 hibysync
 ```
@@ -59,6 +59,11 @@ columns as available content width increases. Album headers and tracks share
 one virtualized scrolling list, including disc headings. Narrow album headers
 reduce cover size and place secondary queue actions in a menu.
 
+The bottom bar shows confirmed source rate/depth (for example `44.1kHz 16 bit`)
+in muted green beside the artist. Unknown fields are omitted; decoded float
+format is not substituted for unknown source bit depth. This does not describe
+the final DAC output.
+
 The bottom bar has independent track/transport/utility regions. Wide transport
 controls and timeline remain centered regardless of the track title. Below
 1000px of available bar width, previous/play-pause/next and queue stay visible,
@@ -75,7 +80,14 @@ handles play/pause so a current-track click does not reconstruct its queue.
 Arrow keys navigate selected rows, Enter activates a focused row/control, and
 Tab visits controls. Space toggles playback outside text editors, while focused
 buttons retain their normal Space action. Menus dismiss with Escape. These are
-window-local shortcuts; MPRIS/global media keys remain a follow-up.
+window-local shortcuts; MPRIS also exposes controls to Linux media-key clients.
+
+Mouse Back/Forward thumb buttons navigate a bounded UI history across Library
+albums/artists, playlists, and application sections without changing playback.
+Alt+Left/Alt+Right provide the same navigation. Back closes the queue or focused
+Import side sheet first; metadata editing and permanent-delete confirmations
+retain their explicit close/confirm actions. Search/sort is restored with the
+view without recording a history entry per keystroke.
 
 Artist/album text links underline on hover or keyboard focus and activate with
 a click or Enter. They are shared across song rows, album cards/headers, the
@@ -132,21 +144,103 @@ engine's supported MP3, FLAC, WAV, AAC/M4A, ALAC, Ogg, and other audio formats.
 
 This does **not** establish bit-perfect output. Software volume below 100%,
 necessary channel/format conversion, PipeWire graph settings, mixing, hardware
-volume, and DAC capabilities can alter samples. Exclusive output and advanced
-rate/device configuration are not exposed in this milestone. See the official
+volume, and DAC capabilities can alter samples. Exclusive output and forced-rate
+configuration are not exposed; device selection is available in Settings. See the official
 [mpv audio options](https://mpv.io/manual/stable/#audio) and
 [JSON IPC protocol](https://mpv.io/manual/stable/#json-ipc) for the engine contract.
 
 Missing/unreadable tracks report a nonmodal error and mpv can advance to the next
 entry. A run of failed entries is stopped to prevent infinite error loops under
 repeat. Audio-output initialization errors stop playback; Play retries, and Next
-can select another track. Temporary device availability depends on PipeWire's
-rerouting and mpv's output handling; automatic device-recovery retry is not
-implemented. mpv crashes/timeouts leave a retryable error and retain the queue.
+can select another track. A disconnected explicitly selected device falls back to the system default
+when mpv reports it missing. If initialization already failed, press Play to retry.
+HibySync does not change the system default, routing, or global configuration. mpv crashes/timeouts leave a retryable error and retain the queue.
+
+## Audio Settings and confirmed diagnostics
+
+Open the top-right **Settings** button or **Playback options → Audio details &
+output**. The device selector and Refresh use mpv's asynchronous JSON
+`audio-device-list` property. Device IDs/descriptions come from the installed
+backend, rather than a hardcoded list. The normal setting is **System default ·
+prefer PipeWire**, with PulseAudio/ALSA fallback. An explicit selection chooses
+its own driver. Changing devices schedules an mpv output reload and may briefly
+interrupt sound. No global PipeWire, ALSA, volume, routing, or sample-rate
+configuration is written. Preferences persist without automatically starting audio.
+
+The selected device is a **request**, not proof of the final physical endpoint.
+mpv's `audio-device` property explicitly does not identify the device actually in
+use. Settings separately shows its confirmed `current-ao` and
+`audio-out-params`: driver, sample rate, sample format, and channels handed to
+the audio API. If unavailable/stopped, it shows no active output rather than stale
+parameters. This does not measure PipeWire's graph, resampler, mixer, or DAC.
+Source codec, sample rate, meaningful indexed bit depth, compressed bitrate, and
+lossless/lossy classification come from the catalog. Unknown values remain
+unknown. Decoder sample format is shown separately; floating-point decoder
+output is not a claim about source bit depth.
+
+mpv negotiates output without HibySync forcing a rate/format. Software volume is
+limited to 0–100%; 100% requests unity gain, lower values attenuate samples.
+ReplayGain, normalization, EQ, filters, speed changes, and crossfade remain off.
+Buffer sizes use backend defaults: no low-latency tuning or unverified underrun
+counter is presented. Physical device behavior and stability require local
+listening tests. Refer to the [mpv audio/device properties](https://mpv.io/manual/stable/#audio-device-list)
+for the reported-property contract.
+
+Native `gapless-audio=weak` keeps compatible tracks continuous but permits output
+renegotiation for changed rates/parameters. Strong `yes` mode is deliberately not
+forced because it can retain the first track's output rate and resample later
+tracks. Tests concatenate consecutive FLACs and compare the complete PCM bytes,
+and test MP3s with LAME delay/padding metadata for the exact expected sample count.
+These verify native decoding/playlist continuity through the PCM file driver.
+They cannot establish gapless physical output through a particular DAC. Other
+encoders, missing delay/padding tags, rate changes, slow storage, or device
+switches can leave gaps; crossfade is never substituted.
+
+## Linux media controls
+
+The GUI extra includes `dbus-next`; Arch provides
+[`python-dbus-next`](https://archlinux.org/packages/extra/any/python-dbus-next/).
+One asynchronous session owns `org.mpris.MediaPlayer2.HibySync` at
+`/org/mpris/MediaPlayer2`. mpv personal scripts are disabled, preventing an mpv
+MPRIS plugin from creating a duplicate session. A second HibySync process does
+not claim a second name or wait to take over the first. Missing session bus or
+dependency is shown in Settings and does not disable local playback. If a source
+checkout reports a missing `dbus_next` module, install `python-dbus-next` with
+pacman and restart HibySync. `./install.sh --gui` installs it in the application
+environment for the installed `hibysync` command; it does not install into the
+system Python used by `./hibysync`. An already running process must be restarted.
+
+The [MPRIS Player interface](https://specifications.freedesktop.org/mpris/latest/Player_Interface.html)
+provides Play/Pause/Stop, Previous/Next, position/seek, duration, track/artist/album,
+cached local artwork, volume, shuffle and repeat. External Next/Previous preserve
+paused/stopped state. OpenUri and playback-speed changes are unsupported.
+No track-list extension or bus auto-reconnection is provided. Session registration
+is released on shutdown. On Hyprland, map your media keys to your preferred
+MPRIS client (for example `playerctl --player=HibySync play-pause`); HibySync does
+not edit compositor key bindings.
+
+## Local playlists
+
+Library **Playlists** offers create/rename, ordered track lists, remove, move
+earlier/later, Play and Shuffle. **Add to playlist…** in song/album menus opens a
+chooser with a new-playlist option. Playlist removal affects membership only,
+never music files. Repeated songs have separate entry IDs and can be reordered
+independently. Playback resolves a fresh index snapshot and hands its order to
+the same independent queue; subsequent playlist edits do not interrupt it.
+
+User playlists live in `$XDG_STATE_HOME/hibysync/playlists.sqlite3`, normally
+`~/.local/state/hibysync/playlists.sqlite3`, using transactional SQLite with WAL.
+They are separate from the disposable cache/index; retain this file in backups.
+Entries reference canonical library root plus stable track ID. HibySync moves and
+index-detected renames retain references; rebuilding the existing index preserves
+IDs. Missing/deleted/unindexed entries remain visible and are skipped for playback.
+The catalog must be refreshed for external changes. Deleting the entire index and
+recreating it assigns new IDs; playlists intentionally do not guess matches by
+song title/path. M3U8 import/export and cloud/streaming features are not included.
 
 ## Saved state
 
-Queue entries, selection, shuffle, repeat, volume, and recent position are saved
+Queue entries, selection, shuffle, repeat, volume, output-device preference, and recent position are saved
 atomically to `$XDG_STATE_HOME/hibysync/player.json`, normally
 `~/.local/state/hibysync/player.json`. Writes are debounced; position is checkpointed
 every 15 seconds and at clean shutdown. Launch restores a stopped player and does
@@ -155,9 +249,14 @@ Renamed/deleted files in a saved queue can be missing even after the Library is
 refreshed: queues are snapshots, and currently do not resolve later filesystem
 renames through the index. Rebuild that listening context from the Library.
 
-MPRIS/global media keys remain a documented follow-up. Full library metadata
-editing, crossfade/DSP controls, output-device preferences, and playback-history
-management are outside this milestone. The preserved `--widgets` frontend is
+Library [metadata saves](metadata.md) release mpv before publishing any file that
+could be referenced by its native playlist, repair queue references, and leave
+playback stopped for explicit resume. When the native queue is settled and has
+no references to any edited source/destination, unrelated edits preserve playback.
+The same service starts a fresh process when Play is pressed after a release.
+
+Crossfade/DSP controls, exclusive-output configuration, and playback-history
+management remain outside this milestone. The preserved `--widgets` frontend is
 still Import review only.
 
 ## Tests
@@ -165,6 +264,9 @@ still Import review only.
 ```sh
 python -m unittest discover -s tests -v
 python -m unittest discover -s tests -p test_playback.py -v
+python -m unittest discover -s tests -p test_audio_polish.py -v
+python -m unittest discover -s tests -p test_playlists.py -v
+python -m unittest discover -s tests -p test_polish_gui.py -v
 ```
 
 The real-engine tests need mpv, PySide6, and local Unix-socket access. Optional
@@ -177,6 +279,12 @@ playlist edits, large-queue responsiveness, and shutdown. Null output alone is
 not evidence of audible sound; PCM tests verify decoded output separately.
 GUI tests explicitly use a fake service to verify presentation and queue actions.
 All fixtures, database files, state files, and generated audio are temporary.
+MPRIS integration uses a private `dbus-run-session` and `gdbus` to test actual
+D-Bus types, media commands, property changes, and duplicate-name protection. It
+is skipped if its dependency/tools are unavailable. Playlist tests include 2,100
+entries, repeated tracks, root isolation, moves, missing tracks and persistence.
+Existing catalog tests cover 20,001 indexed tracks and virtualized paging.
+This is synthetic scale coverage, not a timed benchmark of the real music library.
 
 To explicitly exercise the real PipeWire output with a short low-volume tone:
 

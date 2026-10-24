@@ -40,7 +40,29 @@ Rectangle {
             ColumnLayout {
                 Layout.fillWidth: true; Layout.minimumWidth: 0; spacing: 5
                 TextLink { objectName: "playerAlbumLink"; text: bar.player.current.title || "Nothing playing"; color: Theme.text; Layout.fillWidth: true; font.weight: Font.DemiBold; enabled: Boolean(bar.player.current.id); onClicked: libraryBrowser.visitTrack(bar.player.current.id, "album") }
-                TextLink { objectName: "playerArtistLink"; text: bar.player.current.artist || "Choose music from your Library"; font.pixelSize: 12; Layout.fillWidth: true; enabled: Boolean(bar.player.current.id); onClicked: libraryBrowser.visitTrack(bar.player.current.id, "artist") }
+                RowLayout {
+                    id: artistLine
+                    Layout.fillWidth: true; Layout.minimumWidth: 0; spacing: 8
+                    TextLink {
+                        id: artistLink
+                        objectName: "playerArtistLink"; text: bar.player.current.artist || "Choose music from your Library"
+                        font.pixelSize: 12; Layout.minimumWidth: 0
+                        Layout.preferredWidth: Math.min(implicitWidth, Math.max(0, artistLine.width - (stream.visible ? stream.implicitWidth + artistLine.spacing : 0)))
+                        Layout.fillWidth: !stream.visible
+                        enabled: Boolean(bar.player.current.id)
+                        onClicked: libraryBrowser.visitTrack(bar.player.current.id, "artist")
+                    }
+                    Type {
+                        id: stream
+                        objectName: "playerSourceStream"
+                        text: bar.player.sourceStream
+                        color: Theme.success; font.pixelSize: 12
+                        visible: text.length > 0
+                        Layout.preferredWidth: implicitWidth; Layout.minimumWidth: implicitWidth
+                        Accessible.name: "Source audio " + text
+                    }
+                    Item { visible: stream.visible; Layout.fillWidth: true; Layout.minimumWidth: 0 }
+                }
             }
         }
         TransportControls {
@@ -91,6 +113,7 @@ Rectangle {
             spacing: 8
             FlatButton { Layout.fillWidth: true; quiet: true; text: "Shuffle: " + (bar.player.shuffle ? "on" : "off"); onClicked: { bar.player.toggleShuffle(); options.close() } }
             FlatButton { Layout.fillWidth: true; quiet: true; text: "Repeat: " + bar.player.repeat; onClicked: { bar.player.cycleRepeat(); options.close() } }
+            FlatButton { Layout.fillWidth: true; quiet: true; text: "Audio details & output"; onClicked: { options.close(); playback.refreshAudioDevices(); reviewController.navigate("settings") } }
             FlatButton { objectName: "playerStop"; Layout.fillWidth: true; quiet: true; text: "Stop"; enabled: bar.player.count > 0; onClicked: { bar.player.stop(); options.close() } }
             Divider { Layout.fillWidth: true }
             RowLayout {

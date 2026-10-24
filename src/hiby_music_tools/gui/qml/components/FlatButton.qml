@@ -6,6 +6,7 @@ AbstractButton {
     id: control
     property bool primary: false
     property bool quiet: false
+    property bool destructive: false
     implicitWidth: Math.max(64, contentItem.implicitWidth + 28)
     implicitHeight: 36
     padding: 0
@@ -17,7 +18,7 @@ AbstractButton {
     contentItem: Type {
         text: control.text
         horizontalAlignment: Text.AlignHCenter
-        color: control.primary ? Theme.background : Theme.text
+        color: control.destructive ? Theme.error : control.primary ? Theme.background : Theme.text
         font.weight: control.primary ? Font.DemiBold : Font.Normal
     }
     background: Rectangle {

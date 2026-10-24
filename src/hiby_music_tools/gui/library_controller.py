@@ -205,6 +205,20 @@ class LibraryController(QObject):
             self._mode = 'albums'
         self._reload()
 
+    def navigationState(self):
+        return dict(mode=self._mode, search=self._search, sort=self._sort, descending=self._descending,
+                    artist_id=self._artist_id, artist_name=self._artist_name,
+                    album_id=self._album_id, return_to=self._return)
+
+    def restoreNavigation(self, state):
+        self._cancel_navigation()
+        self._mode, self._search = state['mode'], state['search']
+        self._sort, self._descending = state['sort'], state['descending']
+        self._artist_id, self._artist_name = state['artist_id'], state['artist_name']
+        self._album_id, self._return = state['album_id'], state['return_to']
+        self._album = {}
+        self._reload()
+
     @Slot()
     def _reload(self):
         self.timer.stop()

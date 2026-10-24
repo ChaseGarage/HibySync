@@ -8,6 +8,7 @@ from hiby_music_tools.library.playback import tracks
 from hiby_music_tools.playback.queue import MusicQueue
 from hiby_music_tools.playback.mpv import MpvService
 from hiby_music_tools.playback import state as storage
+from hiby_music_tools.playback.audio import source_info, output_info, stream_label
 from .quick_models import RecordModel
 from .workers import Task
 
@@ -18,6 +19,9 @@ class PlayerController(QObject):
     stateChanged = Signal()
     positionChanged = Signal()
     safeToClose = Signal()
+    filesReleased = Signal()
+    audioChanged = Signal()
+    seeked = Signal(float)
 
     def __init__(self, browser, *, service=None, state_file=None, persist=True):
         super().__init__()
@@ -26,10 +30,14 @@ class PlayerController(QObject):
         self.queue = MusicQueue()
         self._model = RecordModel(self)
         self._current_track = {}
+        self._maintenance = False
         self._state = 'stopped'
         self._position = self._duration = 0.0
         self._volume = 100.0
         self._error = ''
+        self._audio = {}
+        self._device = 'auto'
+        self._media_status = 'MPRIS not connected'
         self._closing = self._service_closed = False
         self._close_waiting = False
         self._dirty = False
@@ -47,6 +55,9 @@ class PlayerController(QObject):
         self.service.playbackError.connect(self._failed)
         self.service.ended.connect(self._ended)
         self.service.closed.connect(self._closed)
+        self.service.released.connect(self.filesReleased)
+        self.service.audioChanged.connect(self._audio_update)
+        self.stateChanged.connect(self.audioChanged)
         self.save_timer = QTimer(self)
         self.save_timer.setSingleShot(True)
         self.save_timer.setInterval(600)
@@ -78,6 +89,67 @@ class PlayerController(QObject):
     repeat = Property(str, lambda self: self.queue.repeat, notify=changed)
     error = Property(str, lambda self: self._error, notify=changed)
     busy = Property(bool, lambda self: self.task is not None or self._restoring, notify=changed)
+    maintenance = Property(bool, lambda self: self._maintenance, notify=changed)
+    audioDevices = Property('QVariantList', lambda self: self._audio.get('audio-device-list') or [], notify=audioChanged)
+    audioDevice = Property(str, lambda self: self._device, notify=audioChanged)
+    audioOutput = Property(str, lambda self: output_info(self._audio) if self._state in ('playing', 'paused', 'loading', 'buffering') else 'No active audio output', notify=audioChanged)
+    mediaStatus = Property(str, lambda self: self._media_status, notify=audioChanged)
+    audioSource = Property(str, lambda self: source_info(self._current_track) if self._current_track else 'No track selected', notify=trackChanged)
+    sourceStream = Property(str, lambda self: stream_label(self._current_track), notify=trackChanged)
+    decodedAudio = Property(str, lambda self: output_info(dict(self._audio, **{'current-ao': 'Decoder', 'audio-out-params': self._audio.get('audio-params')})), notify=audioChanged)
+
+    def _audio_update(self, data):
+        self._audio = data
+        device = data.get('audio-device')
+        if isinstance(device, str) and device != self._device:
+            self._device = device
+            self._schedule_save()
+        self.audioChanged.emit()
+
+    def setMediaStatus(self, message):
+        self._media_status = message
+        self.audioChanged.emit()
+
+    def mediaAdjacent(self, direction):
+        """MPRIS preserves paused/stopped state when moving through the queue."""
+        if self._maintenance:
+            return
+        if direction < 0 and self.position > 3 and self.state != 'stopped':
+            self.seek(0)
+            return
+        target = self.queue.adjacent(direction)
+        if not target:
+            if direction > 0:
+                self.stop()
+            return
+        state = self._state
+        if state == 'stopped':
+            self.queue.current = target
+            self._position = self._duration = self._resume_position = 0
+            self._queue_changed(sync=False)
+        else:
+            self.queue.current = target
+            self._position = self._duration = self._resume_position = 0
+            self._state = 'paused' if state == 'paused' else 'loading'
+            self._queue_changed(restart=True, paused=state == 'paused')
+
+    @Slot()
+    def refreshAudioDevices(self):
+        if not self._maintenance and not self._closing:
+            self.service.refresh_devices()
+
+    @Slot(str)
+    def selectAudioDevice(self, name):
+        if self._maintenance or self._closing:
+            return
+        available = {d.get('name') for d in self.audioDevices}
+        if name != 'auto' and name not in available:
+            self._notice('Audio device is no longer available. Refresh devices and try again.')
+            return
+        self._device = name
+        self.service.select_device(name)
+        self.audioChanged.emit()
+        self._schedule_save()
 
     def _notice(self, error):
         self._error = error
@@ -89,13 +161,13 @@ class PlayerController(QObject):
         self.trackChanged.emit()
         self.stateChanged.emit()
         self.positionChanged.emit()
-        if sync:
+        if sync and not self._maintenance:
             self.service.sync(self.queue.entries, self.queue.current, restart=restart, paused=paused, position=position)
         self.changed.emit()
         self._schedule_save()
 
     def _request(self, mode, identifier, action, selected=''):
-        if self._closing:
+        if self._closing or self._maintenance:
             return
         self._revision += 1
         revision = self._revision
@@ -142,6 +214,15 @@ class PlayerController(QObject):
             # Adding to an idle queue never begins playback.
             self._queue_changed()
 
+    def playRows(self, rows, *, shuffle=False):
+        """Play an ordered, resolved playlist snapshot using the shared queue."""
+        if self._closing or self._maintenance:
+            return
+        self._revision += 1
+        if self.task:
+            self.task.cancel()
+        self._context(rows, 'shuffle' if shuffle else 'play', '', self._revision)
+
     @Slot(str)
     def playContext(self, selected):
         mode = 'album' if self.browser.mode == 'album' else 'songs'
@@ -173,6 +254,8 @@ class PlayerController(QObject):
 
     @Slot()
     def togglePause(self):
+        if self._maintenance:
+            return
         if self._state in ('playing', 'paused', 'buffering'):
             self.service.pause(self._state != 'paused')
         elif self.queue.entries:
@@ -196,7 +279,9 @@ class PlayerController(QObject):
     @Slot(float)
     def seek(self, seconds):
         if math.isfinite(seconds) and self._state in ('playing', 'paused', 'buffering'):
-            self.service.seek(max(0, min(self.duration, seconds)))
+            seconds = max(0, min(self.duration, seconds))
+            self.service.seek(seconds)
+            self.seeked.emit(seconds)
 
     @Slot(float)
     def setVolume(self, value):
@@ -226,12 +311,56 @@ class PlayerController(QObject):
 
     @Slot(str)
     def playEntry(self, qid):
+        if self._maintenance:
+            return
         if any(e['qid'] == qid for e in self.queue.entries):
             self.queue.current = qid
             self._state = 'loading'
             self._position = self._duration = self._resume_position = 0
             self._error = ''
             self._queue_changed(restart=True)
+
+    def beginMaintenance(self, paths=None):
+        self._revision += 1
+        for task in self._tasks:
+            task.cancel()
+        self._resume_position = self._position
+        self._maintenance = True
+        if paths and self.service.can_write_unreferenced(paths):
+            # The frozen native playlist cannot open these files. Keep its
+            # existing decoder running while unrelated metadata is saved.
+            self.changed.emit()
+            self.filesReleased.emit()
+            return
+        self._state = 'stopped'
+        self.stateChanged.emit()
+        self.changed.emit()
+        self.service.release()
+
+    def finishMaintenance(self, updates):
+        for entry in self.queue.entries:
+            if entry['id'] in updates:
+                entry.update(updates[entry['id']])
+        self._maintenance = False
+        self._queue_changed(sync=False)
+        if self._closing:
+            self._save()
+
+    def finishDeletion(self, removed):
+        entries = self.queue.entries
+        old_index, current = self.queue.index, self.queue.current
+        self.queue.entries = [entry for entry in entries if entry['id'] not in removed]
+        keep = {entry['qid'] for entry in self.queue.entries}
+        self.queue._order = [qid for qid in self.queue._order if qid in keep]
+        if current not in keep:
+            next_index = sum(entry['id'] not in removed for entry in entries[:max(0, old_index)])
+            self.queue.current = self.queue.entries[min(next_index, len(self.queue.entries) - 1)]['qid'] if self.queue.entries else ''
+            self._position = self._duration = self._resume_position = 0
+        self._state = 'stopped'
+        self._maintenance = False
+        self._queue_changed(sync=False)
+        if self._closing:
+            self._save()
 
     @Slot(str)
     def remove(self, qid):
@@ -328,6 +457,11 @@ class PlayerController(QObject):
             self._position = self._resume_position
             self.service.volume(self._volume)
             self.service.repeat(self.queue.repeat)
+            device = data.get('audio_device', 'auto')
+            if isinstance(device, str) and device and '\x00' not in device:
+                self._device = device
+                self.service.select_device(device)
+                self.audioChanged.emit()
             self._model.replace([dict(e, current=e['qid'] == self.queue.current) for e in self.queue.entries])
         except (TypeError, ValueError, KeyError) as error:
             self._notice('Could not restore player state: ' + str(error))
@@ -350,7 +484,7 @@ class PlayerController(QObject):
     def _save(self):
         if not self._persist or not self._dirty:
             return
-        snapshot = dict(queue=self.queue.snapshot(), volume=self._volume,
+        snapshot = dict(queue=self.queue.snapshot(), volume=self._volume, audio_device=self._device,
                         position=self._position if self._state != 'stopped' else self._resume_position)
         # Detach dictionaries from future queue edits before crossing threads.
         snapshot['queue'] = {**snapshot['queue'], 'entries': [dict(e) for e in self.queue.entries],

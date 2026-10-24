@@ -11,7 +11,7 @@ requires-python = ">=3.10"
 dependencies = ["Pillow>=9.1", "mutagen>=1.45"]
 
 [project.optional-dependencies]
-gui = ["PySide6>=6.5,<7"]
+gui = ["PySide6>=6.5,<7", "dbus-next>=0.2.3,<1"]
 
 [project.scripts]
 hiby-music-sanitize = "hiby_music_tools.sanitize:main"

@@ -1,22 +1,32 @@
 """Apply reviewed tag changes to a staged copy and verify the saved values."""
 
 from mutagen import File as MutagenFile
-from mutagen.id3 import TALB, TDRC, TIT2, TPE1, TPE2, TPOS, TRCK
+from mutagen.id3 import TALB, TCON, TDRC, TIT2, TPE1, TPE2, TPOS, TRCK
 
 from hiby_music_tools import sanitize
 from .scan import read_track
+from hiby_music_tools.online_art import tag_text
 
 
 FIELDS = {'track_artist': 'artist', 'album_artist': 'albumartist', 'title': 'title',
           'album': 'album', 'year': 'date'}
 
 
-def apply_metadata(path, track):
+def read_genre(path):
+    audio = MutagenFile(path)
+    if audio is None:
+        raise ValueError('Cannot read audio tags')
+    return tag_text(audio.tags or {}, ('genre', 'TCON', '\xa9gen')) or ''
+
+
+def apply_metadata(path, track, *, genre=None):
     updates = {tag: getattr(track.proposed, field) or '' for field, tag in FIELDS.items()
                if getattr(track.proposed, field) != getattr(track.original, field)}
     for field, tag in (('track_number', 'tracknumber'), ('disc_number', 'discnumber')):
         if getattr(track, field) != getattr(track, 'original_' + field):
             updates[tag] = getattr(track, field)
+    if genre is not None and genre != read_genre(path):
+        updates['genre'] = genre
     if not updates:
         return
     if updates.get('date') and not sanitize.YEAR_RE.fullmatch(updates['date']):
@@ -34,7 +44,7 @@ def apply_metadata(path, track):
         if audio.tags is None:
             audio.add_tags()
         frames = dict(artist=TPE1, albumartist=TPE2, title=TIT2, album=TALB,
-                      date=TDRC, tracknumber=TRCK, discnumber=TPOS)
+                      date=TDRC, tracknumber=TRCK, discnumber=TPOS, genre=TCON)
         for key, value in updates.items():
             frame = frames[key]
             audio.tags.delall(frame.__name__)
@@ -45,7 +55,7 @@ def apply_metadata(path, track):
         if audio.tags is None:
             audio.add_tags()
         keys = dict(artist='\xa9ART', albumartist='aART', title='\xa9nam', album='\xa9alb',
-                    date='\xa9day', tracknumber='trkn', discnumber='disk')
+                    date='\xa9day', tracknumber='trkn', discnumber='disk', genre='\xa9gen')
         for key, value in updates.items():
             audio.tags.pop(keys[key], None)
             if value:
@@ -87,3 +97,5 @@ def apply_metadata(path, track):
                 equal = actual == expected
             if not equal:
                 raise ValueError(f'Tag verification failed for {tag} in {path.name}')
+    if 'genre' in updates and read_genre(path) != updates['genre']:
+        raise ValueError(f'Tag verification failed for genre in {path.name}')

@@ -1638,29 +1638,36 @@ def prepare_folder_art(path: Path, max_px: int, quality: int) -> tuple[bytes, tu
         return output.getvalue(), img.size, max(old_size) > max_px
 
 
-def embed_folder_art(audio_path: Path, jpeg_data: bytes, image_size: tuple[int, int]) -> ArtworkResult:
+def embed_folder_art(audio_path: Path, jpeg_data: bytes, image_size: tuple[int, int],
+                     *, mime: str = 'image/jpeg', preserve_other: bool = False) -> ArtworkResult:
     """Replace old front/embedded covers in a copied audio file."""
     ext = audio_path.suffix.lower()
     try:
+        if mime not in ('image/jpeg', 'image/png'):
+            raise ValueError('Embedded covers must be JPEG or PNG')
         if ext == ".flac":
             audio = FLAC(audio_path)
+            retained = [p for p in audio.pictures if p.type not in (0, 3)] if preserve_other else []
             audio.clear_pictures()
             picture = Picture()
             picture.type = 3  # Front cover.
-            picture.mime = "image/jpeg"
+            picture.mime = mime
             picture.desc = "Cover"
             picture.width, picture.height = image_size
             picture.depth = 24
             picture.colors = 0
             picture.data = jpeg_data
             audio.add_picture(picture)
+            for old in retained:
+                audio.add_picture(old)
             audio.save()
 
         elif ext in {".m4a", ".mp4"}:
             audio = MP4(audio_path)
             if audio.tags is None:
                 audio.add_tags()
-            audio.tags["covr"] = [MP4Cover(jpeg_data, imageformat=MP4Cover.FORMAT_JPEG)]
+            retained = list(audio.tags.get('covr', []))[1:] if preserve_other else []
+            audio.tags["covr"] = [MP4Cover(jpeg_data, imageformat=MP4Cover.FORMAT_PNG if mime == 'image/png' else MP4Cover.FORMAT_JPEG), *retained]
             audio.save()
 
         elif ext in {".mp3", ".wav", ".wave", ".aif", ".aiff"}:
@@ -1671,8 +1678,14 @@ def embed_folder_art(audio_path: Path, jpeg_data: bytes, image_size: tuple[int, 
                 audio.add_tags()
             if not hasattr(audio.tags, "delall"):
                 raise ValueError("Audio file has no ID3 tags for APIC artwork")
+            retained = [p for p in audio.tags.getall('APIC') if p.type not in (0, 3)] if preserve_other else []
             audio.tags.delall("APIC")
-            audio.tags.add(APIC(encoding=3, mime="image/jpeg", type=3, desc="Cover", data=jpeg_data))
+            for old in retained:
+                audio.tags.add(old)
+            description = 'Cover'
+            while any(p.desc == description for p in retained):
+                description += ' (front)'
+            audio.tags.add(APIC(encoding=3, mime=mime, type=3, desc=description, data=jpeg_data))
             audio.save()
 
         elif ext in {".ogg", ".oga", ".opus"}:
@@ -1683,13 +1696,18 @@ def embed_folder_art(audio_path: Path, jpeg_data: bytes, image_size: tuple[int, 
                 audio.add_tags()
             picture = Picture()
             picture.type = 3
-            picture.mime = "image/jpeg"
+            picture.mime = mime
             picture.desc = "Cover"
             picture.width, picture.height = image_size
             picture.depth = 24
             picture.colors = 0
             picture.data = jpeg_data
-            audio.tags["metadata_block_picture"] = [base64.b64encode(picture.write()).decode("ascii")]
+            retained = []
+            if preserve_other:
+                for encoded in audio.tags.get('metadata_block_picture', []):
+                    if Picture(base64.b64decode(encoded)).type not in (0, 3):
+                        retained.append(encoded)
+            audio.tags["metadata_block_picture"] = [base64.b64encode(picture.write()).decode("ascii"), *retained]
             # These legacy fields can otherwise still display outdated art.
             for key in ("coverart", "coverartmime"):
                 if key in audio.tags:

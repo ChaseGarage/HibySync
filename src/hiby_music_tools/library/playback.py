@@ -37,7 +37,7 @@ def tracks(root, database=None, *, mode='songs', identifier='', search='', sort=
             base += ' AND instr(t.search_text,?)>0'
             params.append(folded(search))
         rows = []
-        columns = 't.id,t.relpath,t.title,t.artist,t.album_artist,t.track_number,t.disc_number,t.duration,t.art_key,t.year,a.title AS album_title'
+        columns = 't.id,t.album_id,t.relpath,t.title,t.artist,t.album_artist,t.track_number,t.disc_number,t.duration,t.art_key,t.year,t.format,t.codec,t.sample_rate,t.bit_depth,t.bitrate,a.title AS album_title'
         for row in con.execute('SELECT ' + columns + base + ' ORDER BY ' + order, params):
             if operation:
                 operation.checkpoint()

@@ -12,18 +12,19 @@ optional HibySync GUI. See [the migration plan](docs/migration.md).
 
 HibySync uses Qt Quick/QML for a minimalist dark interface, backed by Python
 and PySide6. It supports scanning, metadata review, Apple artwork search, and
-verified imports, an indexed local Library browser, and mpv-backed playback. Existing CLI commands
+verified imports, an indexed local Library browser, metadata management, local
+playlists, and mpv-backed playback with audio settings and Linux media controls. Existing CLI commands
 retain their behavior.
 
 On CachyOS/Arch, install Qt bindings along with the existing dependencies:
 
 ```sh
-sudo pacman -S mpv pyside6 python-pillow python-mutagen python-setuptools python-pip
+sudo pacman -S mpv ffmpeg pyside6 python-dbus-next python-pillow python-mutagen python-setuptools python-pip
 ./install.sh --gui
 hibysync
 ```
 
-Alternatively, `./install.sh --gui` can download PySide6 into its environment.
+Alternatively, `./install.sh --gui` can download PySide6 and dbus-next into its environment.
 Use `./install.sh --offline --gui` when the dependencies are already installed.
 Use `--gui` again when updating an existing GUI installation. CLI-only installs
 do not replace a previously installed GUI launcher.
@@ -100,8 +101,28 @@ or starting playback. Select **Index library** to scan the configured library.
 Browse artwork in Albums, select an artist to see their albums, or search and
 sort Songs by title, artist, album, year, and duration. Album details include
 numbered tracks, disc groups, and total duration. Scanning only reads music;
-it does not retag, move, or remove library files. Library metadata editing
-remains reserved for a later milestone.
+it does not retag, move, or remove library files. Library writes are separate,
+explicit actions through the metadata editor.
+
+Use a song's **… → Edit song**, an album's **… → Edit album**, or **Edit artist**
+on an artist page. Edit tags, select affected tracks/albums, and choose embedded,
+folder, manual, or Apple artwork. Changes stay pending until **Preview changes →
+Save**. Original tag values and proposed changes appear in the review. Artwork
+keeps its original JPEG/PNG bytes unless HiBy optimization is explicitly selected.
+**Reorganize files** is a separate opt-in with an old/new-path preview; metadata
+edits alone do not rename anything. Referenced playback files are released safely
+before saving; unrelated edits can preserve playback. The queue/index receive
+successful metadata/path updates. After a release, press Play to resume.
+FFmpeg/ffprobe verify encoded audio and decoded samples without rewriting audio.
+Backups and a recovery journal remain alongside the index under
+`~/.cache/hiby-music-tools/library/maintenance/`. See
+[Library metadata management and recovery](docs/metadata.md).
+
+Song and album context menus also offer **Delete…**. A separate confirmation
+lists the audio files before permanent deletion. Confirmed deletion bypasses
+Trash, creates no deletion backup, releases playback first, and removes successful
+deletions from the Library index and every queued instance. Folder artwork and
+other non-audio files stay in place.
 
 Use a song row's leading play control to play its complete sorted/filtered
 context; the same control pauses/resumes the current track without replacing
@@ -148,6 +169,19 @@ is cancelled. Successfully verified copies stay in the library. New-file
 publication requires hard-link support (available on typical local Linux
 filesystems such as ext4/Btrfs); unsupported filesystems fail safely and retain
 sources. A changed source, artwork, or destination requires a fresh review.
+
+Library **Playlists** supports create/rename, track removal/reordering, Play and
+Shuffle. Song/album context menus offer **Add to playlist…**. Playlists are saved
+separately from the index at `~/.local/state/hibysync/playlists.sqlite3` (honors
+`XDG_STATE_HOME`) and follow stable indexed track IDs through HibySync moves.
+Unavailable entries stay visible and are skipped during playback.
+
+**Settings → Audio** lists backend devices and shows separate source, decoded,
+and audio-API output information. The normal output prefers PipeWire; no global
+audio configuration is changed. MPRIS exposes controls/metadata to desktop media
+clients without registering multiple sessions. Read [audio behavior and limitations](docs/playback.md)
+for gapless verification, device fallback, media keys, and why these diagnostics
+do not establish bit-perfect output.
 
 ## Workflow
 

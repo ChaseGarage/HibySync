@@ -92,7 +92,15 @@ Synchronization and importer behavior are unchanged.
   QProcess/QLocalSocket implementation with native mpv playlist reconciliation.
 - `playback/state.py`: atomic state persistence, called from workers.
 - `library/playback.py`: complete ordered playback contexts from SQLite snapshots.
-- `gui/player_controller.py`: Qt state, queue actions, worker and shutdown lifecycle.
+- `gui/player_controller.py`: Qt state, queue actions, audio preferences and shutdown lifecycle.
+- `playback/audio.py`, `mpris.py`: conservative audio diagnostics and one threaded
+  MPRIS session forwarding commands to the shared player.
+- `library/playlists.py`, `gui/playlist_controller.py`: transactional persistent
+  playlists, stable catalog references and background presentation tasks.
+- `library/maintenance.py`, `integrity.py`: reviewed tag/path plans, shared tag
+  writing, encoded/decoded audio verification, backups/journaling, and index repair.
+- `gui/metadata_controller.py`, `editor_artwork.py`: focused metadata editing,
+  background save/artwork tasks, and full-resolution image previews.
 - `gui/qml/`: design tokens, reusable controls, and dedicated pages.
 - `gui/models.py`, `details.py`, `window.py`: preserved Widgets frontend.
 - `gui/app.py`: default QML / `--widgets` launcher and application lifecycle.
@@ -217,5 +225,6 @@ and check QML loading without binding errors. The existing Widgets tests also
 run. Apple HTTP responses are mocked for deterministic tests; actual catalog
 availability depends on the service and network. Import tests generate temporary
 WAV files and, when ffmpeg is available, FLAC/MP3/M4A/Ogg/Opus/AIFF fixtures.
-ffmpeg is only a test-fixture tool, not a runtime dependency. A real Hyprland session is still needed to assess compositor-specific
+FFmpeg is optional for Import/indexing and required for Library-save audio verification.
+A real Hyprland session is still needed to assess compositor-specific
 scaling, graphics-driver behavior, and native folder pickers.

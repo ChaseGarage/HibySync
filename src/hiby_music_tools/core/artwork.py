@@ -40,12 +40,14 @@ def folder_previews(folder: Path):
 
 def embedded_blobs(audio):
     tags = audio.tags or {}
-    blobs = [picture.data for picture in getattr(audio, 'pictures', [])]
+    def front_first(pictures):
+        return sorted(pictures, key=lambda picture: 0 if picture.type == 3 else 1)
+    blobs = [picture.data for picture in front_first(getattr(audio, 'pictures', []))]
     if hasattr(tags, 'getall'):
-        blobs.extend(frame.data for frame in tags.getall('APIC'))
+        blobs.extend(frame.data for frame in front_first(tags.getall('APIC')))
     blobs.extend(bytes(value) for value in tags.get('covr', []))
-    for value in tags.get('metadata_block_picture', []):
-        blobs.append(Picture(base64.b64decode(value)).data)
+    blobs.extend(picture.data for picture in front_first(
+        [Picture(base64.b64decode(value)) for value in tags.get('metadata_block_picture', [])]))
     for value in tags.get('coverart', []):
         blobs.append(base64.b64decode(value))
     return blobs

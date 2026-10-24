@@ -36,14 +36,22 @@ def main():
     else:
         from .quick import create_engine
         from hiby_music_tools.playback.state import state_path
-        engine, controller = create_engine(args.inbox, args.library, player_state=state_path())
+        engine, controller = create_engine(args.inbox, args.library, player_state=state_path(), enable_mpris=True)
         if not engine.rootObjects():
+            engine.playlist_controller.shutdown()
+            engine.deletion_controller.shutdown()
             controller.shutdown()
+            engine.metadata_controller.shutdown()
             engine.library_controller.shutdown()
             engine.player_controller.shutdown()
             print('\n'.join(engine.load_errors) or 'Unable to load the HibySync QML interface.', file=sys.stderr)
             return 2
         result = app.exec()
+        if engine.mpris:
+            engine.mpris.shutdown()
+        engine.playlist_controller.shutdown()
+        engine.deletion_controller.shutdown()
+        engine.metadata_controller.shutdown()
         controller.shutdown()
         engine.library_controller.shutdown()
         engine.player_controller.shutdown()
@@ -51,6 +59,9 @@ def main():
         QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
         engine.library_controller.deleteLater()
         engine.player_controller.deleteLater()
+        engine.metadata_controller.deleteLater()
+        engine.deletion_controller.deleteLater()
+        engine.playlist_controller.deleteLater()
         controller.deleteLater()
     QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
     return result

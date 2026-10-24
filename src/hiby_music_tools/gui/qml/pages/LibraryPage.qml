@@ -12,9 +12,11 @@ ColumnLayout {
     required property var sourceController
     readonly property bool active: sourceController.page === "library"
     onActiveChanged: if (active) browser.activate()
+    Connections { target: page.browser; function onNavigationRequested() { uiNavigation.setPlaylistsMode(false) } }
+    readonly property bool playlistMode: uiNavigation.playlistMode
     spacing: 20
     RowLayout {
-        visible: page.browser.mode !== "album"
+        visible: page.playlistMode || page.browser.mode !== "album"
         Layout.fillWidth: true
         ColumnLayout {
             spacing: 8
@@ -29,13 +31,15 @@ ColumnLayout {
         FlatButton { objectName: "libraryRefreshButton"; text: page.browser.indexing ? "Cancel" : "Refresh"; onClicked: page.browser.indexing ? page.browser.cancel() : page.browser.refresh(false) }
     }
     RowLayout {
-        visible: page.browser.mode !== "album"
+        visible: page.playlistMode || page.browser.mode !== "album"
         Layout.fillWidth: true; spacing: 8
-        FlatButton { objectName: "libraryAlbumsMode"; text: "Albums"; quiet: page.browser.mode !== "albums"; onClicked: page.browser.setMode("albums") }
-        FlatButton { objectName: "libraryArtistsMode"; text: "Artists"; quiet: page.browser.mode !== "artists"; onClicked: page.browser.setMode("artists") }
-        FlatButton { objectName: "librarySongsMode"; text: "Songs"; quiet: page.browser.mode !== "songs"; onClicked: page.browser.setMode("songs") }
+        FlatButton { objectName: "libraryAlbumsMode"; text: "Albums"; quiet: page.playlistMode || page.browser.mode !== "albums"; onClicked: { uiNavigation.setPlaylistsMode(false); page.browser.setMode("albums") } }
+        FlatButton { objectName: "libraryArtistsMode"; text: "Artists"; quiet: page.playlistMode || page.browser.mode !== "artists"; onClicked: { uiNavigation.setPlaylistsMode(false); page.browser.setMode("artists") } }
+        FlatButton { objectName: "librarySongsMode"; text: "Songs"; quiet: page.playlistMode || page.browser.mode !== "songs"; onClicked: { uiNavigation.setPlaylistsMode(false); page.browser.setMode("songs") } }
+        FlatButton { objectName: "libraryPlaylistsMode"; text: "Playlists"; quiet: !page.playlistMode; onClicked: uiNavigation.setPlaylistsMode(true) }
         Item { Layout.fillWidth: true }
         Field {
+            visible: !page.playlistMode
             editorName: "librarySearchInput"
             Layout.fillWidth: true
             Layout.preferredWidth: 340
@@ -47,12 +51,13 @@ ColumnLayout {
         }
     }
     RowLayout {
-        visible: page.browser.artistName.length > 0 && page.browser.mode === "albums"
+        visible: !page.playlistMode && page.browser.artistName.length > 0 && page.browser.mode === "albums"
         Layout.fillWidth: true
         FlatButton { text: "←  All artists"; quiet: true; onClicked: page.browser.back() }
         Item { Layout.fillWidth: true }
         FlatButton { text: "Play artist"; onClicked: playback.artistAction(page.browser.artistId, "play") }
         FlatButton { text: "Add to queue"; quiet: true; onClicked: playback.artistAction(page.browser.artistId, "append") }
+        FlatButton { text: "Edit artist"; quiet: true; onClicked: libraryEditor.edit("artist", page.browser.artistId, false) }
     }
     ColumnLayout {
         visible: page.browser.indexing
@@ -72,20 +77,21 @@ ColumnLayout {
         Loader {
             anchors.fill: parent
             active: page.active
-            sourceComponent: page.browser.mode === "album" ? albumDetail : page.browser.mode === "albums" ? albumsView : page.browser.mode === "artists" ? artistsView : songsView
+            sourceComponent: page.playlistMode ? playlistsView : page.browser.mode === "album" ? albumDetail : page.browser.mode === "albums" ? albumsView : page.browser.mode === "artists" ? artistsView : songsView
         }
         EmptyState {
             anchors.fill: parent
-            visible: page.browser.mode !== "album" && page.browser.model.total === 0 && !page.browser.queryBusy
+            objectName: "libraryEmptyState"
+            visible: !page.playlistMode && page.browser.mode !== "album" && page.browser.model.total === 0 && !page.browser.queryBusy
             title: page.browser.indexing ? "Indexing your music" : !page.browser.summary.scanned ? "Your music, ready to explore" : page.browser.search.length > 0 ? "No matching music" : "No music indexed here"
             subtitle: page.browser.indexing ? "You can keep browsing while the index refreshes." : !page.browser.summary.scanned ? "Index your configured music library to begin." : "Try another search or refresh your library."
             actionText: !page.browser.indexing && !page.browser.summary.scanned ? "Index library" : ""
             onAction: page.browser.refresh(false)
         }
-        Type { anchors.centerIn: parent; visible: page.browser.queryBusy && page.browser.model.total === 0; text: "Loading library…"; color: Theme.muted }
+        Type { anchors.centerIn: parent; visible: !page.playlistMode && page.browser.queryBusy && page.browser.model.total === 0; text: "Loading library…"; color: Theme.muted }
     }
     RowLayout {
-        visible: page.browser.mode !== "album"
+        visible: !page.playlistMode && page.browser.mode !== "album"
         Layout.fillWidth: true
         Type { text: page.sourceController.displayPath(page.browser.root); color: Theme.muted; font.pixelSize: Theme.small; Layout.fillWidth: true }
         Type { text: Theme.countLabel(page.browser.model.total, page.browser.mode === "albums" ? "album" : page.browser.mode === "artists" ? "artist" : "track"); color: Theme.muted; font.pixelSize: Theme.small }
@@ -146,5 +152,6 @@ ColumnLayout {
             }
         }
     }
+    Component { id: playlistsView; PlaylistsPage {} }
     Component { id: albumDetail; LibraryAlbumPage { browser: page.browser } }
 }

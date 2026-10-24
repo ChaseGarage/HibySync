@@ -17,7 +17,7 @@ from PySide6.QtNetwork import QLocalSocket
 from .service import PlaybackService
 
 
-def arguments(socket, *, output=None):
+def arguments(socket, *, output=None, device='auto'):
     args = ['--no-config', '--load-scripts=no', '--ytdl=no', '--idle=yes',
             '--terminal=no', '--input-terminal=no', '--input-default-bindings=no',
             '--osc=no', '--osd-level=0', '--video=no', '--audio-display=no',
@@ -25,7 +25,8 @@ def arguments(socket, *, output=None):
             '--save-position-on-quit=no', '--speed=1', '--replaygain=no',
             '--audio-normalize-downmix=no', '--af=', '--gapless-audio=weak',
             '--audio-pitch-correction=no', '--volume=100', '--volume-max=100',
-            '--ao=' + (output or 'pipewire,pulse,alsa'),
+            *(['--ao=' + output] if output else ['--ao=pipewire,pulse,alsa'] if device == 'auto' else []),
+            '--audio-device=' + device,
             '--audio-client-name=HibySync', '--input-ipc-server=' + str(socket)]
     return args
 
@@ -65,6 +66,7 @@ class MpvService(PlaybackService):
         self._reported_failure = False
         self._connected_flag = False
         self._closing = False
+        self._releasing = False
         self._buffer = b''
         self._serial = 0
         self._commands = deque()
@@ -83,6 +85,9 @@ class MpvService(PlaybackService):
         self._pending_seek = 0
         self._failures = set()
         self._deferred_errors = []
+        self._device = 'auto'
+        self._audio = {}
+        self._devices_known = False
 
     @property
     def running(self):
@@ -97,7 +102,7 @@ class MpvService(PlaybackService):
         self._reported_failure = False
         self._socket_path = str(Path(self._directory.name) / 'ipc')
         self._started = time.monotonic()
-        self.process.start(self.executable, [*arguments(self._socket_path, output=self.output), *self.extra_args])
+        self.process.start(self.executable, [*arguments(self._socket_path, output=self.output, device=self._device), *self.extra_args])
         self.retry.start()
 
     def _connect(self):
@@ -116,6 +121,9 @@ class MpvService(PlaybackService):
             self._command(['observe_property', index + 1, name])
         self._command(['set_property', 'volume', self._volume])
         self.repeat(self._repeat)
+        for index, name in enumerate(('audio-device-list', 'current-ao', 'audio-out-params',
+                                      'audio-params', 'audio-codec-name', 'audio-bitrate', 'audio-device')):
+            self._command(['observe_property', 100 + index, name])
         self._reconcile()
 
     def _command(self, command, callback=None):
@@ -158,8 +166,19 @@ class MpvService(PlaybackService):
                 self._pump()
             return
         kind = event.get('event')
-        if kind == 'property-change' and not self._syncing:
-            self.properties.emit({event.get('name'): event.get('data')})
+        if kind == 'property-change':
+            name, value = event.get('name'), event.get('data')
+            if name in ('audio-device-list', 'current-ao', 'audio-out-params', 'audio-params',
+                        'audio-codec-name', 'audio-bitrate', 'audio-device'):
+                self._audio[name] = value
+                self.audioChanged.emit(dict(self._audio))
+                if name == 'audio-device-list' and isinstance(value, list):
+                    self._devices_known = True
+                    if self._device != 'auto' and self._device not in {d.get('name') for d in value}:
+                        self.playbackError.emit(self._current, 'Selected audio device is unavailable. Using the system default; press Play if playback stopped.')
+                        self.select_device('auto')
+            elif not self._syncing:
+                self.properties.emit({name: value})
         elif kind == 'start-file':
             qid = self._ids.get(event.get('playlist_entry_id'))
             if qid and not self._syncing:
@@ -307,6 +326,27 @@ class MpvService(PlaybackService):
         if self._connected_flag:
             self._command(['set_property', 'pause', bool(paused)])
 
+    def refresh_devices(self):
+        self._ensure()
+        if self._connected_flag:
+            self._command(['get_property', 'audio-device-list'], self._device_list)
+
+    def _device_list(self, value):
+        self._message({'event': 'property-change', 'name': 'audio-device-list', 'data': value})
+
+    def select_device(self, name):
+        if not isinstance(name, str) or not name or '\x00' in name:
+            return
+        self._device = name
+        if self._connected_flag:
+            # mpv schedules a local output reload. Explicit devices select their
+            # own driver; clear the default driver preference first.
+            if not self.output:
+                self._command(['set_property', 'ao', 'pipewire,pulse,alsa' if name == 'auto' else ''])
+            self._command(['set_property', 'audio-device', name])
+        self._audio['audio-device'] = name
+        self.audioChanged.emit(dict(self._audio))
+
     def seek(self, seconds):
         if self._connected_flag:
             self._command(['seek', max(0, float(seconds)), 'absolute+exact'])
@@ -349,7 +389,7 @@ class MpvService(PlaybackService):
     def _disconnected(self):
         was_connected = self._connected_flag
         self._connected_flag = False
-        if was_connected and self.running and not self._closing:
+        if was_connected and self.running and not self._closing and not self._releasing:
             self._fatal('Lost the mpv control connection. Press Play to retry.')
 
     def _finished(self, code, status):
@@ -365,11 +405,18 @@ class MpvService(PlaybackService):
         self._connected_flag = self._syncing = False
         self._actual, self._ids = [], {}
         self._deferred_errors = []
+        self._audio = {'audio-device': self._device}
+        self._devices_known = False
+        self.audioChanged.emit(dict(self._audio))
         if self._directory:
             self._directory.cleanup()
             self._directory = None
         if self._closing:
             self.closed.emit()
+        elif self._releasing:
+            self._releasing = False
+            self.properties.emit({'state': 'stopped'})
+            self.released.emit()
         elif not self._reported_failure:
             self.playbackError.emit(self._current, 'mpv exited unexpectedly. Press Play to retry.')
             self.properties.emit({'state': 'error'})
@@ -386,6 +433,28 @@ class MpvService(PlaybackService):
             self.kill_timer.start(1500)
         else:
             self.closed.emit()
+
+    def release(self):
+        self._releasing = True
+        self.retry.stop()
+        self.coalesce.stop()
+        self.plan_timer.stop()
+        self._plan = None
+        self._commands.clear()
+        if self.running:
+            self._command(['quit'])
+            self.kill_timer.start(1500)
+        else:
+            self._releasing = False
+            self.released.emit()
+
+    def can_write_unreferenced(self, paths):
+        # A pending playlist edit could still have an old decoder/file open.
+        if self._syncing or self._plan or self._commands or self._inflight or self._releasing:
+            return False
+        targets = {str(Path(path).resolve()) for path in paths}
+        return not targets.intersection(str(Path(entry['path']).resolve())
+                                        for entry in (*self._actual, *self._desired))
 
     def shutdown(self):
         """Only called after the GUI event loop exits, including abnormal exits."""

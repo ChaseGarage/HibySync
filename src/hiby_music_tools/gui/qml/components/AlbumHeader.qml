@@ -34,18 +34,25 @@ Item {
                 FlatButton { objectName: "playLibraryAlbum"; text: "Play"; onClicked: playback.albumAction(header.browser.album.id, "play") }
                 FlatButton { objectName: "shuffleLibraryAlbum"; text: "Shuffle"; quiet: true; onClicked: playback.albumAction(header.browser.album.id, "shuffle") }
                 FlatButton { visible: metadata.width >= 570; text: "Add to queue"; quiet: true; onClicked: playback.albumAction(header.browser.album.id, "append") }
-                IconButton { objectName: "albumActionsButton"; glyph: "more"; text: "Album queue actions"; onClicked: actions.open() }
+                IconButton { id: actionsButton; objectName: "albumActionsButton"; glyph: "more"; text: "Album actions"; onClicked: actions.open() }
             }
         }
     }
     Popup {
         id: actions
-        x: header.artworkSize + 24; y: header.height
-        width: 180; padding: 8; focus: true
+        parent: actionsButton
+        x: 0; y: actionsButton.height + 6
+        width: 200; padding: 8; focus: true
         background: Rectangle { color: Theme.surface; radius: Theme.radius; border.width: 1; border.color: Theme.divider }
         contentItem: Column {
+            objectName: "albumActionsMenuContents"
             FlatButton { width: parent.width; text: "Add to queue"; quiet: true; onClicked: { playback.albumAction(header.browser.album.id, "append"); actions.close() } }
             FlatButton { width: parent.width; text: "Play next"; quiet: true; onClicked: { playback.albumAction(header.browser.album.id, "next"); actions.close() } }
+            FlatButton { width: parent.width; text: "Add to playlist…"; quiet: true; onClicked: { actions.close(); libraryPlaylists.choose("album", header.browser.album.id) } }
+            FlatButton { objectName: "editLibraryAlbum"; width: parent.width; text: "Edit album"; quiet: true; onClicked: { actions.close(); libraryEditor.edit("album", header.browser.album.id, false) } }
+            FlatButton { width: parent.width; text: "Change artwork"; quiet: true; onClicked: { actions.close(); libraryEditor.edit("album", header.browser.album.id, false, true) } }
+            FlatButton { width: parent.width; text: "Reorganize album"; quiet: true; onClicked: { actions.close(); libraryEditor.edit("album", header.browser.album.id, true) } }
+            FlatButton { objectName: "deleteLibraryAlbum"; width: parent.width; text: "Delete album…"; destructive: true; quiet: true; onClicked: { actions.close(); libraryDeletion.request("album", header.browser.album.id) } }
         }
     }
 }

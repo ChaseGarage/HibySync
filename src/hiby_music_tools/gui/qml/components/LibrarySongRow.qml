@@ -87,6 +87,11 @@ FocusScope {
             FlatButton { width: parent.width; text: row.playing ? "Pause" : "Play"; quiet: true; onClicked: { playback.toggleTrack(row.record.id); actions.close() } }
             FlatButton { width: parent.width; text: "Play next"; quiet: true; onClicked: { playback.trackAction(row.record.id, "next"); actions.close() } }
             FlatButton { width: parent.width; text: "Add to queue"; quiet: true; onClicked: { playback.trackAction(row.record.id, "append"); actions.close() } }
+            FlatButton { width: parent.width; text: "Add to playlist…"; quiet: true; onClicked: { actions.close(); libraryPlaylists.choose("track", row.record.id) } }
+            FlatButton { objectName: "editSong_" + row.record.id; width: parent.width; text: "Edit song"; quiet: true; onClicked: { actions.close(); libraryEditor.edit("track", row.record.id, false) } }
+            FlatButton { width: parent.width; text: "Change artwork"; quiet: true; onClicked: { actions.close(); libraryEditor.edit("track", row.record.id, false, true) } }
+            FlatButton { width: parent.width; text: "Reorganize file"; quiet: true; onClicked: { actions.close(); libraryEditor.edit("track", row.record.id, true) } }
+            FlatButton { objectName: "deleteSong_" + row.record.id; width: parent.width; text: "Delete song…"; destructive: true; quiet: true; onClicked: { actions.close(); libraryDeletion.request("track", row.record.id) } }
         }
     }
     Divider { width: parent.width - columns.padding * 2; x: columns.padding; anchors.bottom: parent.bottom; opacity: 0.55 }

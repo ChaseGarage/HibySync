@@ -27,7 +27,7 @@ class ScanResult:
     errors: int
 
 
-def refresh(root: Path, database: Path | None = None, *, rebuild=False, operation=None):
+def refresh(root: Path, database: Path | None = None, *, rebuild=False, operation=None, relocations=()):
     op = operation or Operation()
     root = root.expanduser().resolve()
     database = database or index_path()
@@ -62,6 +62,16 @@ def refresh(root: Path, database: Path | None = None, *, rebuild=False, operatio
         row = con.execute('SELECT id FROM roots WHERE path=?', (str(root),)).fetchone()
         root_id = row['id'] if row else str(uuid.uuid4())
         con.execute('INSERT OR IGNORE INTO roots(id,path) VALUES(?,?)', (root_id, str(root)))
+        for move in relocations:
+            destination = root / move['destination']
+            if destination.resolve() != destination or not destination.is_relative_to(root) or signature(destination) != tuple(move['signature']):
+                raise ValueError('Moved file changed before index reconciliation')
+            # A previously indexed, since-deleted file may have occupied this
+            # path. The verified maintenance publication now owns it.
+            con.execute('DELETE FROM tracks WHERE root_id=? AND relpath=? AND id!=?',
+                        (root_id, move['destination'], move['id']))
+            con.execute("UPDATE tracks SET relpath=?,error='Maintenance refresh required' WHERE id=? AND root_id=? AND relpath=?",
+                        (move['destination'], move['id'], root_id, move['source']))
         old = {row['relpath']: dict(row) for row in con.execute('SELECT * FROM tracks WHERE root_id=?', (root_id,))}
         identities = defaultdict(list)
         for row in old.values():
